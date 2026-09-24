@@ -17,9 +17,17 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request): View|RedirectResponse
     {
+        if ($request->user()->role === 'admin') {
+            return redirect()->route('admin.dashboard');
+        }
+        if ($request->user()->role === 'student') {
+            return view('students.account', ['student' => $request->user()->student?->load(['block', 'subjects.faculty'])]);
+        }
         if ($request->user()->role === 'faculty') {
             return redirect()->route('faculty.dashboard');
         }
+
+        abort_unless($request->user()->role === 'program_head', 403);
 
         return view('program_head.dashboard', [
             'studentCount' => Student::count(),

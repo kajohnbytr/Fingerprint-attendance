@@ -15,14 +15,16 @@ class AttendanceSummary
 {
     public function subjects(User $faculty): Builder
     {
-        return Subject::query()->where('faculty_id', $faculty->id);
+        abort_unless(in_array($faculty->role, ['admin', 'faculty'], true), 403);
+
+        return Subject::query()->when($faculty->role === 'faculty', fn (Builder $query) => $query->where('faculty_id', $faculty->id));
     }
 
     /** @param array{student_id?: int|string|null, subject_id?: int|string|null, block_id?: int|string|null} $filters */
     public function enrollments(User $faculty, array $filters = []): Builder
     {
         return Enrollment::query()
-            ->whereHas('subject', fn (Builder $query) => $query->where('faculty_id', $faculty->id))
+            ->whereIn('subject_id', $this->subjects($faculty)->select('id'))
             ->with(['student', 'subject.faculty', 'block'])
             ->when($filters['student_id'] ?? null, fn (Builder $query, $id) => $query->where('student_id', $id))
             ->when($filters['subject_id'] ?? null, fn (Builder $query, $id) => $query->where('subject_id', $id))
@@ -32,11 +34,15 @@ class AttendanceSummary
     /** @return array{late_minutes: int, report_days: int} */
     public function preferences(User $faculty): array
     {
+        $system = DB::table('system_settings')->where('id', 1)->first();
+        if ($faculty->role === 'admin') {
+            return ['late_minutes' => (int) ($system->late_minutes ?? 15), 'report_days' => (int) ($system->report_days ?? 30)];
+        }
         $preferences = DB::table('faculty_preferences')->where('user_id', $faculty->id)->first();
 
         return [
-            'late_minutes' => (int) ($preferences->late_minutes ?? 15),
-            'report_days' => (int) ($preferences->report_days ?? 30),
+            'late_minutes' => (int) ($preferences->late_minutes ?? $system->late_minutes ?? 15),
+            'report_days' => (int) ($preferences->report_days ?? $system->report_days ?? 30),
         ];
     }
 

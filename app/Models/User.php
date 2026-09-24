@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -10,6 +11,8 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
+    protected $attributes = ['is_active' => true];
+
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
@@ -17,6 +20,8 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'is_active',
+        'student_id',
     ];
 
     protected $hidden = [
@@ -29,6 +34,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -38,5 +44,10 @@ class User extends Authenticatable
             Subject::class,
             'faculty_id'
         );
+    }
+
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class);
     }
 }

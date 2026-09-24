@@ -11,7 +11,7 @@
                 <td>{{ $enrollment->subject->room }}</td>
                 <td>{{ $enrollment->subject->faculty?->name ?? 'Unassigned' }}</td>
                 <td>{{ $enrollment->created_at->toDateString() }}</td>
-                <td>@if($enrollment->student && !$enrollment->student->trashed())<a href="{{ route('faculty.students.attendance', $enrollment->student) }}">View history</a>@else Archived @endif</td>
+                <td>@if($enrollment->student && !$enrollment->student->trashed())<a href="{{ route(($portalPrefix ?? 'faculty').'.students.attendance', $enrollment->student) }}">View history</a>@else Archived @endif</td>
             </tr>
         @empty
             <tr><td colspan="8" class="empty">No saved enrollments match these filters.</td></tr>

@@ -39,7 +39,7 @@
                 Northbridge
 
                 <small>
-                    {{ auth()->user()->role === 'faculty' ? 'FACULTY PORTAL' : 'PROGRAM HEAD PORTAL' }}
+                    {{ ['admin' => 'SYSTEM ADMIN PORTAL', 'faculty' => 'FACULTY PORTAL', 'student' => 'STUDENT PORTAL'][auth()->user()->role] ?? 'PROGRAM HEAD PORTAL' }}
                 </small>
             </span>
         </a>
@@ -48,7 +48,13 @@
 
         <nav>
 
-            @if(auth()->user()->role === 'faculty')
+            @if(auth()->user()->role === 'admin')
+                @foreach(['dashboard' => ['&#9638;', 'Dashboard'], 'attendance' => ['&#10003;', 'Attendance'], 'students' => ['&#9817;', 'Students'], 'schedules' => ['&#9707;', 'Schedules'], 'inbox' => ['&#9993;', 'Announcements & Complaints'], 'reports' => ['&#9637;', 'Reports'], 'users' => ['&#9823;', 'Users & Roles'], 'settings' => ['&#9881;', 'Settings']] as $page => [$icon, $label])
+                    <a href="{{ route('admin.'.$page) }}" title="{{ $label }}" aria-label="{{ $label }}" class="nav-link {{ request()->routeIs('admin.'.$page, 'admin.'.$page.'.*') || ($page === 'inbox' && request()->routeIs('admin.announcements.*', 'admin.complaints.*')) ? 'active' : '' }}"><span aria-hidden="true">{!! $icon !!}</span><span>{{ $label }}</span></a>
+                @endforeach
+            @elseif(auth()->user()->role === 'student')
+                <a class="nav-link active" href="{{ route('dashboard') }}" aria-label="My profile"><span aria-hidden="true">&#9817;</span><span>My profile</span></a>
+            @elseif(auth()->user()->role === 'faculty')
                 @foreach(['dashboard' => ['&#9638;', 'Dashboard'], 'attendance' => ['&#10003;', 'Attendance'], 'students' => ['&#9817;', 'Enrolled Students'], 'schedules' => ['&#9707;', 'Class Schedules'], 'reports' => ['&#9637;', 'Reports'], 'inbox' => ['&#9993;', 'Announcements & Complaints'], 'settings' => ['&#9881;', 'Settings']] as $page => [$icon, $label])
                     <a href="{{ route('faculty.'.$page) }}" title="{{ $label }}" aria-label="{{ $label }}" class="nav-link {{ request()->routeIs('faculty.'.$page, 'faculty.'.$page.'.*') ? 'active' : '' }}">
                         <span aria-hidden="true">{!! $icon !!}</span><span>{{ $label }}</span>

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\BlockController;
 use App\Http\Controllers\DashboardController;
@@ -18,6 +19,29 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('login.store');
+});
+
+Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function (): void {
+    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
+    Route::get('/attendance', [AdminController::class, 'attendance'])->name('attendance');
+    Route::get('/students', [AdminController::class, 'students'])->name('students');
+    Route::get('/students/{student}', [AdminController::class, 'student'])->whereNumber('student')->name('students.show');
+    Route::get('/students/{student}/attendance', [AdminController::class, 'attendance'])->whereNumber('student')->name('students.attendance');
+    Route::get('/schedules', [AdminController::class, 'schedules'])->name('schedules');
+    Route::get('/inbox', [AdminController::class, 'inbox'])->name('inbox');
+    Route::post('/announcements', [AdminController::class, 'publish'])->name('announcements.store');
+    Route::get('/announcements/{announcement}', [AdminController::class, 'announcement'])->whereNumber('announcement')->name('announcements.show');
+    Route::get('/complaints/{complaint}', [AdminController::class, 'complaint'])->whereNumber('complaint')->name('complaints.show');
+    Route::patch('/complaints/{complaint}', [AdminController::class, 'updateComplaint'])->whereNumber('complaint')->name('complaints.update');
+    Route::get('/reports', [AdminController::class, 'reports'])->name('reports');
+    Route::get('/reports/export', [AdminController::class, 'export'])->name('reports.export');
+    Route::get('/users', [AdminController::class, 'users'])->name('users');
+    Route::get('/users/create', [AdminController::class, 'createUser'])->name('users.create');
+    Route::post('/users', [AdminController::class, 'storeUser'])->name('users.store');
+    Route::get('/users/{account}/edit', [AdminController::class, 'editUser'])->whereNumber('account')->name('users.edit');
+    Route::patch('/users/{account}', [AdminController::class, 'updateUser'])->whereNumber('account')->name('users.update');
+    Route::get('/settings', [AdminController::class, 'settings'])->name('settings');
+    Route::patch('/settings', [AdminController::class, 'updateSettings'])->name('settings.update');
 });
 
 Route::middleware('auth')->group(function () {

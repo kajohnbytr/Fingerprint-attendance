@@ -124,8 +124,10 @@ class PortalController extends Controller
         $counts = $this->attendance->counts($records);
         $enrollments = $type === 'enrollment' ? $this->reportEnrollments($request)->orderBy('id')->lazy(200) : collect();
         $preferences = $this->attendance->preferences($request->user());
+        $portalLabel = $request->user()->role === 'admin' ? 'System Admin' : 'Faculty';
+        $portalPrefix = $request->user()->role === 'admin' ? 'admin' : 'faculty';
 
-        return response()->streamDownload(function () use ($filters, $type, $records, $counts, $enrollments, $preferences): void {
+        return response()->streamDownload(function () use ($filters, $type, $records, $counts, $enrollments, $preferences, $portalLabel): void {
             $stream = fopen('php://output', 'w');
             $write = function (array $row) use ($stream): void {
                 $safe = array_map(function (mixed $value): string {
@@ -135,7 +137,7 @@ class PortalController extends Controller
                 }, $row);
                 fputcsv($stream, $safe, ',', '"', '');
             };
-            $write(['Faculty '.$type.' report', $filters['from'], $filters['to'], config('app.timezone')]);
+            $write([$portalLabel.' '.$type.' report', $filters['from'], $filters['to'], config('app.timezone')]);
             if ($type === 'attendance') {
                 $write(['Inferred from scans within current class times; holidays and schedule history are not available.']);
                 $write(['Late after minutes', $preferences['late_minutes']]);
@@ -158,7 +160,7 @@ class PortalController extends Controller
                 }
             }
             fclose($stream);
-        }, 'faculty-'.$type.'-'.$filters['from'].'-'.$filters['to'].'.csv', [
+        }, $portalPrefix.'-'.$type.'-'.$filters['from'].'-'.$filters['to'].'.csv', [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Cache-Control' => 'private, no-store',
         ]);

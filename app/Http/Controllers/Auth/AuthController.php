@@ -31,7 +31,7 @@ class AuthController extends Controller
         ]);
 
         if (! Auth::attempt(
-            $credentials,
+            [...$credentials, 'is_active' => true],
             $request->boolean('remember')
         )) {
             return back()

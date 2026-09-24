@@ -1,0 +1,10 @@
+@extends('program_head.layouts.app')
+@section('title', 'System Admin · Users & Roles')
+@section('heading', 'Users & Roles')
+@section('content')
+<div class="page-title"><div><h1>Account management</h1><p>Manage access without deleting student, enrollment, or attendance records.</p></div><a class="button primary" href="{{ route('admin.users.create') }}">Create account</a></div>
+<form class="filters" method="GET"><input name="search" aria-label="Search accounts" placeholder="Name or email" value="{{ $filters['search'] ?? '' }}" maxlength="100"><select name="role" aria-label="Role"><option value="">All roles</option>@foreach(['admin' => 'System Admin', 'program_head' => 'Program Head', 'faculty' => 'Faculty', 'student' => 'Student'] as $role => $label)<option value="{{ $role }}" @selected(($filters['role'] ?? '') === $role)>{{ $label }}</option>@endforeach</select><select name="active" aria-label="Account status"><option value="">All accounts</option><option value="1" @selected(($filters['active'] ?? '') === '1')>Active</option><option value="0" @selected(($filters['active'] ?? '') === '0')>Inactive</option></select><button class="button primary" type="submit">Filter</button><a class="button" href="{{ route('admin.users') }}">Reset</a></form>
+<div class="table-container"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Linked student</th><th>Status</th><th>Action</th></tr></thead><tbody>
+@forelse($accounts as $account)<tr><td>{{ $account->name }}</td><td>{{ $account->email }}</td><td>{{ ['admin' => 'System Admin', 'program_head' => 'Program Head', 'faculty' => 'Faculty', 'student' => 'Student'][$account->role] ?? $account->role }}</td><td>{{ $account->student?->student_number ?? 'None' }}</td><td><span class="badge {{ $account->is_active ? 'active' : 'inactive' }}">{{ $account->is_active ? 'Active' : 'Inactive' }}</span></td><td><a href="{{ route('admin.users.edit', $account) }}">Manage account</a></td></tr>@empty<tr><td colspan="6" class="empty">No accounts match these filters.</td></tr>@endforelse
+</tbody></table></div><div class="pagination">{{ $accounts->links('pagination::simple-bootstrap-5') }}</div>
+@endsection

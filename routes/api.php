@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\ReadingController;
 use App\Http\Controllers\FingerprintController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
     Route::post('/students', [Esp8266Controller::class, 'registerStudent']);
     Route::post('/readings', [Esp8266Controller::class, 'recordAttendance']);
     Route::post('/attendance', [Esp8266Controller::class, 'recordAttendance']);
