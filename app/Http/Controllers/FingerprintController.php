@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Fingerprint;
 use App\Models\FingerprintEnrollment;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -11,9 +12,10 @@ use Illuminate\Validation\ValidationException;
 class FingerprintController extends Controller
 {
     private const DEVICE_ID = 'esp32-01';
+
     private const MAX_SLOT = 127;
 
-    public function start(Request $request)
+    public function start(Request $request): JsonResponse
     {
         $user = $request->user();
 
@@ -66,7 +68,7 @@ class FingerprintController extends Controller
         ], 201);
     }
 
-    public function status(Request $request, FingerprintEnrollment $enrollment)
+    public function status(Request $request, FingerprintEnrollment $enrollment): JsonResponse
     {
         abort_unless($enrollment->user_id === $request->user()->id, 403);
 
@@ -76,7 +78,7 @@ class FingerprintController extends Controller
         ]);
     }
 
-    public function pending(Request $request)
+    public function pending(Request $request): JsonResponse
     {
         $this->authorizeDevice($request);
 
@@ -93,7 +95,7 @@ class FingerprintController extends Controller
         ]);
     }
 
-    public function complete(Request $request, FingerprintEnrollment $enrollment)
+    public function complete(Request $request, FingerprintEnrollment $enrollment): JsonResponse
     {
         $this->authorizeDevice($request);
 
@@ -142,8 +144,10 @@ class FingerprintController extends Controller
 
     private function authorizeDevice(Request $request): void
     {
+        $token = $request->user()->currentAccessToken();
         abort_unless(
-            $request->user()->tokenCan('fingerprint:enroll'),
+            $token && $token->name === self::DEVICE_ID
+                && $request->user()->tokenCan('fingerprint:enroll'),
             403,
             'Token cannot enroll fingerprints.'
         );

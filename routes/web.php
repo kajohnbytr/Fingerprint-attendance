@@ -5,10 +5,11 @@ use App\Http\Controllers\BlockController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\FingerprintController;
+use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
-use App\Http\Controllers\FingerprintController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -88,6 +89,22 @@ Route::middleware('auth')->group(function () {
     });
 });
 
+Route::middleware(['auth', 'role:faculty'])->prefix('faculty')->name('faculty.')->group(function () {
+    Route::get('/dashboard', [PortalController::class, 'dashboard'])->name('dashboard');
+    Route::get('/attendance', [PortalController::class, 'attendance'])->name('attendance');
+    Route::get('/students/{student}/attendance', [PortalController::class, 'attendance'])->whereNumber('student')->name('students.attendance');
+    Route::get('/students', [PortalController::class, 'students'])->name('students');
+    Route::get('/schedules', [PortalController::class, 'schedules'])->name('schedules');
+    Route::get('/reports', [PortalController::class, 'reports'])->name('reports');
+    Route::get('/reports/export', [PortalController::class, 'export'])->name('reports.export');
+    Route::get('/settings', [PortalController::class, 'settings'])->name('settings');
+    Route::patch('/settings', [PortalController::class, 'updateSettings'])->name('settings.update');
+    Route::get('/inbox', [PortalController::class, 'inbox'])->name('inbox');
+    Route::post('/announcements', [PortalController::class, 'publishAnnouncement'])->name('announcements.store');
+    Route::post('/complaints', [PortalController::class, 'recordComplaint'])->name('complaints.store');
+    Route::patch('/complaints/{complaint}', [PortalController::class, 'updateComplaint'])->whereNumber('complaint')->name('complaints.update');
+});
+
 /*
    |--------------------------------------------------------------------------
    | Program Head routes
@@ -164,8 +181,6 @@ Route::get(
 )
     ->middleware(['auth', 'role:admin,program_head,faculty'])
     ->name('program-head.faculty-loads.index');
-
-
 
 Route::middleware('auth')->group(function () {
     Route::view('/fingerprint/register', 'fingerprint-register');

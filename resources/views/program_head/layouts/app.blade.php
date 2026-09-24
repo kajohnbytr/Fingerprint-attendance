@@ -39,7 +39,7 @@
                 Northbridge
 
                 <small>
-                    PROGRAM HEAD PORTAL
+                    {{ auth()->user()->role === 'faculty' ? 'FACULTY PORTAL' : 'PROGRAM HEAD PORTAL' }}
                 </small>
             </span>
         </a>
@@ -47,6 +47,14 @@
         <p class="nav-label">WORKSPACE</p>
 
         <nav>
+
+            @if(auth()->user()->role === 'faculty')
+                @foreach(['dashboard' => ['&#9638;', 'Dashboard'], 'attendance' => ['&#10003;', 'Attendance'], 'students' => ['&#9817;', 'Enrolled Students'], 'schedules' => ['&#9707;', 'Class Schedules'], 'reports' => ['&#9637;', 'Reports'], 'inbox' => ['&#9993;', 'Announcements & Complaints'], 'settings' => ['&#9881;', 'Settings']] as $page => [$icon, $label])
+                    <a href="{{ route('faculty.'.$page) }}" title="{{ $label }}" aria-label="{{ $label }}" class="nav-link {{ request()->routeIs('faculty.'.$page, 'faculty.'.$page.'.*') ? 'active' : '' }}">
+                        <span aria-hidden="true">{!! $icon !!}</span><span>{{ $label }}</span>
+                    </a>
+                @endforeach
+            @else
 
             {{-- Dashboard --}}
             <a
@@ -175,6 +183,7 @@
                 <span>Settings</span>
             </a>
 
+            @endif
         </nav>
 
         <div class="help-card">

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\AttendanceSummary;
 use App\Models\Block;
 use App\Models\Schedule;
+use App\Models\Subject;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -22,6 +24,8 @@ class ScheduleController extends Controller
         ]);
 
         $schedules = Schedule::with('block')
+            ->when($request->user()->role === 'faculty', fn ($query) => $query
+                ->whereIn('subject_code', Subject::where('faculty_id', $request->user()->id)->select('code')))
             ->when(
                 $request->integer('block_id'),
                 fn ($query, $blockId) => $query->where('block_id', $blockId)
@@ -37,7 +41,9 @@ class ScheduleController extends Controller
 
         return view('program_head.schedules', [
             'schedules' => $schedules,
-            'blocks' => Block::orderBy('name')->get(),
+            'blocks' => Block::query()
+                ->when($request->user()->role === 'faculty', fn ($query) => $query->whereIn('id', app(AttendanceSummary::class)->enrollments($request->user())->select('block_id')))
+                ->orderBy('name')->get(),
         ]);
     }
 

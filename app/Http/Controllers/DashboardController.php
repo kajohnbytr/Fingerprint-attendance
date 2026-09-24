@@ -8,13 +8,19 @@ use App\Models\Schedule;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): View
+    public function __invoke(Request $request): View|RedirectResponse
     {
+        if ($request->user()->role === 'faculty') {
+            return redirect()->route('faculty.dashboard');
+        }
+
         return view('program_head.dashboard', [
             'studentCount' => Student::count(),
 

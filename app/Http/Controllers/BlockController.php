@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\AttendanceSummary;
 use App\Models\Block;
 use App\Models\Enrollment;
 use Illuminate\Http\RedirectResponse;
@@ -12,10 +13,12 @@ use Illuminate\View\View;
 
 class BlockController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         return view('program_head.blocks', [
-            'blocks' => Block::withCount('students')
+            'blocks' => Block::withCount(['students' => fn ($query) => $query
+                ->when($request->user()->role === 'faculty', fn ($students) => $students->whereHas('subjects', fn ($subjects) => $subjects->where('faculty_id', $request->user()->id)))])
+                ->when($request->user()->role === 'faculty', fn ($query) => $query->whereIn('id', app(AttendanceSummary::class)->enrollments($request->user())->select('block_id')))
                 ->orderBy('name')
                 ->paginate(10),
         ]);

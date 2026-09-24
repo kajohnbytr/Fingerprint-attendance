@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Block;
 use App\Models\Schedule;
 use App\Models\Student;
+use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -145,11 +146,13 @@ class PortalWorkflowTest extends TestCase
     public function test_schedule_uses_weekday_order_and_block_filter(): void
     {
         $block = Block::factory()->create();
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        Subject::factory()->create(['code' => 'IT101', 'faculty_id' => $faculty->id]);
         Schedule::factory()->for($block)->create(['day' => 'Friday', 'subject_name' => 'Friday subject']);
         Schedule::factory()->for($block)->create(['day' => 'Monday', 'subject_name' => 'Monday subject']);
         Schedule::factory()->create(['subject_name' => 'Other block subject']);
 
-        $this->actingAs(User::factory()->create(['role' => 'faculty']))
+        $this->actingAs($faculty)
             ->get(route('schedules.index', ['block_id' => $block->id]))
             ->assertSeeInOrder(['Monday subject', 'Friday subject'])
             ->assertDontSee('Other block subject');
@@ -168,12 +171,13 @@ class PortalWorkflowTest extends TestCase
     public function test_local_seed_is_repeatable_and_creates_a_working_admin(): void
     {
         $this->seed();
+        $userCount = User::count();
         $this->seed();
 
         $this->post('/login', ['email' => 'admin@northbridge.test', 'password' => 'ChangeMe123!'])
             ->assertRedirect(route('dashboard'));
 
-        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('users', $userCount);
         $this->assertAuthenticatedAs(User::where('email', 'admin@northbridge.test')->firstOrFail());
     }
 }

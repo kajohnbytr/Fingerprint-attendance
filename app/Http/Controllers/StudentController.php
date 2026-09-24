@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\AttendanceSummary;
 use App\Http\Requests\StudentRequest;
 use App\Models\Block;
 use App\Models\Student;
@@ -45,7 +46,11 @@ class StudentController extends Controller
             ],
         ]);
 
-        $students = Student::with(['block', 'subjects.faculty'])
+        $students = Student::with(['block', 'subjects' => fn ($query) => $query
+            ->when($request->user()->role === 'faculty', fn ($subjects) => $subjects->where('faculty_id', $request->user()->id))
+            ->with('faculty')])
+            ->when($request->user()->role === 'faculty', fn ($query) => $query
+                ->whereHas('subjects', fn ($subjects) => $subjects->where('faculty_id', $request->user()->id)))
             ->when(
                 $filters['search'] ?? null,
                 function ($query, $search) {
@@ -97,9 +102,12 @@ class StudentController extends Controller
         return view('students.index', [
             'students' => $students,
 
-            'blocks' => Block::orderBy('name')->get(),
+            'blocks' => Block::query()
+                ->when($request->user()->role === 'faculty', fn ($query) => $query->whereIn('id', app(AttendanceSummary::class)->enrollments($request->user())->select('block_id')))
+                ->orderBy('name')->get(),
 
             'subjects' => Student::select('subject')
+                ->when($request->user()->role === 'faculty', fn ($query) => $query->whereHas('subjects', fn ($subjects) => $subjects->where('faculty_id', $request->user()->id)))
                 ->distinct()
                 ->orderBy('subject')
                 ->pluck('subject'),
@@ -124,10 +132,16 @@ class StudentController extends Controller
             ->with('success', 'Student enrolled successfully.');
     }
 
-    public function show(Student $student): View
+    public function show(Request $request, Student $student): View
     {
+        if ($request->user()->role === 'faculty') {
+            abort_unless($student->subjects()->where('faculty_id', $request->user()->id)->exists(), 404);
+        }
+
         return view('students.show', [
-            'student' => $student->load(['block', 'subjects.faculty']),
+            'student' => $student->load(['block', 'subjects' => fn ($query) => $query
+                ->when($request->user()->role === 'faculty', fn ($subjects) => $subjects->where('faculty_id', $request->user()->id))
+                ->with('faculty')]),
         ]);
     }
 

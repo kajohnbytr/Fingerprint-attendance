@@ -1,3 +1,5 @@
+function initializePrototypePortal() {
+    if (!document.body.dataset.page) { return; }
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character]);
@@ -161,3 +163,6 @@ if (page === 'settings') {
     for (const [key, value] of Object.entries(savedSettings)) { const input = form.elements.namedItem(key); if (input) { if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value; } }
     form.addEventListener('submit', event => { event.preventDefault(); const data = { ...Object.fromEntries(new FormData(form)), notifications: form.elements.notifications.checked }; const saved = saveStorage('northbridge.settings.v1', data); $('.profile strong').textContent = data.displayName; if ($('.notification-button i')) $('.notification-button i').hidden = !data.notifications; toast(saved ? 'Your preferences have been saved.' : 'Browser storage is unavailable. Preferences apply for this visit.'); });
 }
+
+}
+initializePrototypePortal();
