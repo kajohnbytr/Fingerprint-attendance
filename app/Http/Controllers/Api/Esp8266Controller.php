@@ -16,8 +16,6 @@ class Esp8266Controller extends Controller
             'student_id' => ['required', 'string', 'max:50'],
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
-            'section' => ['nullable', 'string', 'max:100'],
-            'subjects' => ['nullable', 'string', 'max:500'],
             'fingerprint_id' => ['required', 'integer', 'min:1', 'max:1000'],
             'enrolled_at' => ['nullable', 'integer'],
         ]);
@@ -36,10 +34,30 @@ class Esp8266Controller extends Controller
                 ->first();
 
             if (! $student) {
-                return response()->json([
-                    'message' => 'Student ID does not exist in the backend.',
-                    'student_id' => $data['student_id'],
-                ], 404);
+                $studentId = DB::table('students')->insertGetId([
+                    'student_number' => $data['student_id'],
+                    'first_name' => $data['first_name'],
+                    'last_name' => $data['last_name'],
+                    'email' => null,
+                    'subject' => null,
+                    'year_level' => 4,
+                    'block_id' => null,
+                    'status' => 'active',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $student = DB::table('students')
+                    ->where('id', $studentId)
+                    ->first();
+            } else {
+                DB::table('students')
+                    ->where('id', $student->id)
+                    ->update([
+                        'first_name' => $data['first_name'],
+                        'last_name' => $data['last_name'],
+                        'updated_at' => now(),
+                    ]);
             }
 
             $existingSlot = DB::table('device_fingerprints')
@@ -80,7 +98,7 @@ class Esp8266Controller extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Fingerprint linked to existing student.',
+                'message' => 'Student and fingerprint saved.',
                 'student_id' => $data['student_id'],
                 'fingerprint_id' => $data['fingerprint_id'],
             ], 201);

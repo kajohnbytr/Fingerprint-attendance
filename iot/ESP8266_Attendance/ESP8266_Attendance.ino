@@ -250,13 +250,13 @@ const char* PH_PASSWORD = "CHANGE_PORTAL_PASSWORD";
   Leave an endpoint empty until the backend route is ready.
 */
 const char* BASE_URL =
-  "http://YOUR_LAPTOP_IP:8000";
+  "http://192.168.100.34:8000";
 
 const char* STUDENT_API_URL =
-  "http://YOUR_LAPTOP_IP:8000/api/students";
+  "http://192.168.100.34:8000/api/students";
 
 const char* ATTENDANCE_API_URL =
-  "http://YOUR_LAPTOP_IP:8000/api/readings";
+  "http://192.168.100.34:8000/api/readings";
 
 const char* BACKEND_API_KEY =
   "YOUR_NEW_PRIVATE_SANCTUM_TOKEN";
@@ -415,6 +415,10 @@ void setupTime();
 
 uint8_t enrollFingerprint(
   uint16_t id
+);
+
+const char* fingerErrorText(
+  int code
 );
 
 void processWebEnrollment();
@@ -2011,29 +2015,9 @@ th {
     <input id="studentLastName" maxlength="20" placeholder="Last name">
     <input id="studentId" maxlength="16" placeholder="03-XXXX-XXXXX">
 
-    <span class="field-label">Block</span>
-    <details class="choice-panel">
-      <summary id="sectionSummary">Block</summary>
-      <div class="choice-list">
-        <label class="choice"><input type="checkbox" name="studentSection" value="UP-FB1S26-IT4-06" onchange="selectSection(this)"> <span>UP-FB1S26-IT4-06</span></label>
-        <label class="choice"><input type="checkbox" name="studentSection" value="UP-FB1S26-IT4-07" onchange="selectSection(this)"> <span>UP-FB1S26-IT4-07</span></label>
-      </div>
-    </details>
-    <div class="selection-hint">Assign Section.</div>
+    <div class="selection-hint">Email, block, and subjects are completed later in Laravel.</div>
 
-    <span class="field-label">Subjects</span>
-    <details class="choice-panel">
-      <summary id="subjectSummary">Choose subjects</summary>
-      <div class="choice-list">
-        <label class="choice"><input type="checkbox" name="studentSubject" value="1" onchange="updateSubjectSummary()"> <span><strong>ITE 310</strong><br>Capstone Project and Research 2</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="2" onchange="updateSubjectSummary()"> <span><strong>ITE 367</strong><br>Managing IT Resources (Including Social &amp; Professional Issues)</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="4" onchange="updateSubjectSummary()"> <span><strong>ITE 381</strong><br>IT Business Solutions</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="8" onchange="updateSubjectSummary()"> <span><strong>Others</strong><br>Please refer to registrar</span></label>
-      </div>
-    </details>
-    <div class="selection-hint">You can select multiple subjects.</div>
-
-    <button id="studentRegisterButton" class="action student-save" onclick="registerStudent()">Save details and register fingerprint</button>
+    <button id="studentRegisterButton" class="action student-save" onclick="registerStudent()">Register student and fingerprint</button>
     <div id="studentOperationStatus" class="status">Ready.</div>
   </div>
 
@@ -2793,13 +2777,9 @@ function registerStudent() {
   const firstName = document.getElementById("studentFirstName").value.trim();
   const lastName = document.getElementById("studentLastName").value.trim();
   const studentId = document.getElementById("studentId").value.trim();
-  const section = document.querySelector('input[name="studentSection"]:checked');
-  const subjects = Array.from(document.querySelectorAll('input[name="studentSubject"]:checked'))
-    .map(input => input.value).join(",");
-
-  if (!firstName || !lastName || !studentId || !section || !subjects) {
-    document.getElementById("studentOperationStatus").innerText =
-      "Enter the name, choose a section, and select at least one subject.";
+  if (!firstName || !lastName || !studentId) {
+  document.getElementById("studentOperationStatus").innerText =
+    "Enter the student's first name, last name, and student ID.";
     return;
   }
 
@@ -2809,9 +2789,7 @@ function registerStudent() {
 
   fetch("/api/register-student?first_name=" + encodeURIComponent(firstName) +
     "&last_name=" + encodeURIComponent(lastName) +
-    "&student_id=" + encodeURIComponent(studentId) +
-    "&section=" + encodeURIComponent(section.value) +
-    "&subjects=" + encodeURIComponent(subjects))
+    "&student_id=" + encodeURIComponent(studentId))
   .then(response => response.json())
   .then(data => {
     document.getElementById("studentOperationStatus").innerText = data.message;
@@ -2826,41 +2804,6 @@ function registerStudent() {
     document.getElementById("studentOperationStatus").innerText = "Connection error.";
     document.getElementById("studentRegisterButton").disabled = false;
   });
-}
-
-
-function selectSection(selected) {
-
-  document
-    .querySelectorAll('input[name="studentSection"]')
-    .forEach(input => {
-      if (input !== selected) {
-        input.checked = false;
-      }
-    });
-
-  document
-    .getElementById("sectionSummary")
-    .innerText =
-    selected.checked
-    ? selected.value
-    : "Choose one section";
-}
-
-
-function updateSubjectSummary() {
-
-  const selected =
-    Array.from(
-      document.querySelectorAll('input[name="studentSubject"]:checked')
-    );
-
-  document
-    .getElementById("subjectSummary")
-    .innerText =
-    selected.length
-    ? selected.length + " subject" + (selected.length === 1 ? "" : "s") + " selected"
-    : "Choose subjects";
 }
 
 
@@ -2889,10 +2832,6 @@ function pollStudentOperation() {
           document.getElementById("studentFirstName").value = "";
           document.getElementById("studentLastName").value = "";
           document.getElementById("studentId").value = "";
-          document.querySelectorAll('input[name="studentSection"],input[name="studentSubject"]')
-            .forEach(input => input.checked = false);
-          document.getElementById("sectionSummary").innerText = "Choose one section";
-          document.getElementById("subjectSummary").innerText = "Choose subjects";
         }
       }
     });
@@ -3557,14 +3496,12 @@ void handleStudentRegister() {
     if (
       !server.hasArg("first_name") ||
       !server.hasArg("last_name") ||
-      !server.hasArg("student_id") ||
-      !server.hasArg("section") ||
-      !server.hasArg("subjects")
+      !server.hasArg("student_id")
     ) {
       server.send(
         400,
         "application/json",
-        "{\"success\":false,\"message\":\"Student name, section, and subjects are required.\"}"
+        "{\"success\":false,\"message\":\"Student name and student ID are required.\"}"
       );
       return;
     }
@@ -3572,43 +3509,15 @@ void handleStudentRegister() {
     String firstName = server.arg("first_name");
     String lastName = server.arg("last_name");
     String studentId = server.arg("student_id");
-    String section = server.arg("section");
-    String subjects = server.arg("subjects");
-
     if (
       !isStudentFieldValid(firstName, 20) ||
       !isStudentFieldValid(lastName, 20) ||
-      !isStudentFieldValid(studentId, 16) ||
-      !isStudentFieldValid(section, 20)
+      !isStudentFieldValid(studentId, 16)
     ) {
       server.send(
         400,
         "application/json",
         "{\"success\":false,\"message\":\"Invalid student details.\"}"
-      );
-      return;
-    }
-
-    uint8_t subjectMask = 0;
-    int start = 0;
-
-    while (start < subjects.length()) {
-      int comma = subjects.indexOf(',', start);
-      if (comma < 0) comma = subjects.length();
-
-      int subject = subjects.substring(start, comma).toInt();
-      if (subject == 1 || subject == 2 || subject == 4 || subject == 8) {
-        subjectMask |= subject;
-      }
-
-      start = comma + 1;
-    }
-
-    if (subjectMask == 0) {
-      server.send(
-        400,
-        "application/json",
-        "{\"success\":false,\"message\":\"Select at least one subject.\"}"
       );
       return;
     }
@@ -3625,11 +3534,11 @@ void handleStudentRegister() {
 
     memset(&pendingStudent, 0, sizeof(pendingStudent));
     pendingStudent.fingerprintId = id;
-    pendingStudent.subjectMask = subjectMask;
+    pendingStudent.subjectMask = 0;
     studentId.toCharArray(pendingStudent.studentId, sizeof(pendingStudent.studentId));
     firstName.toCharArray(pendingStudent.firstName, sizeof(pendingStudent.firstName));
     lastName.toCharArray(pendingStudent.lastName, sizeof(pendingStudent.lastName));
-    section.toCharArray(pendingStudent.section, sizeof(pendingStudent.section));
+    pendingStudent.section[0] = '\0';
     pendingStudentActive = true;
     pendingEnrollId = id;
   }
@@ -5751,21 +5660,21 @@ void loop() {
   delay(80);
 }
 
-//Do not create a new token every demo
-//The API token is stored inside the ESP8266 firmware. Only create a new token if:
-//the old token was revoked;
-//you changed the device ID;
-//you changed the backend user;
-//the token was exposed publicly.
+// Do not create a new token every demo
+// The API token is stored inside the ESP8266 firmware. Only create a new token if:
+// the old token was revoked;
+// you changed the device ID;
+// you changed the backend user;
+// the token was exposed publicly.
 
-//php artisan tinker --execute "echo App\Models\User::where('email', 'admin@northbridge.test')->firstOrFail()->createToken('attendance-esp8266-01', ['students:create','attendance:create'])->plainTextToken;"
+// php artisan tinker --execute "echo App\Models\User::where('email', 'admin@northbridge.test')->firstOrFail()->createToken('attendance-esp8266-01', ['students:create','attendance:create'])->plainTextToken;"
 
 
-//Running Commands
-//cd C:\Users\aronj\Downloads\backend_cap
-//php artisan config:clear
-//php artisan migrate --force
-//php artisan serve --host=0.0.0.0 --port=8000
+// Running Commands
+// cd C:\Users\aronj\Downloads\backend_cap
+// php artisan config:clear
+// php artisan migrate --force
+// php artisan serve --host=0.0.0.0 --port=8000
 
 // Testing Commands
 // Invoke-WebRequest http://localhost:8000 -UseBasicParsing
