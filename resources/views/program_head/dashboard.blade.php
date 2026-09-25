@@ -11,7 +11,7 @@
         </h1>
 
         <p>
-            Assign fixed subjects, enroll students, and track faculty loads.
+            Manage subjects, students, and faculty assignments.
         </p>
     </div>
 
@@ -42,13 +42,7 @@
     <article>
         <small>Fixed subjects</small>
         <strong>{{ number_format($subjectCount) }}</strong>
-        <span>{{ number_format($assignedSubjectCount) }} assigned to faculty</span>
-    </article>
-
-    <article>
-        <small>Subject enrollments</small>
-        <strong>{{ number_format($enrollmentCount) }}</strong>
-        <span>Student assignments</span>
+        <span>{{ number_format($assignedSubjectCount) }} assigned · {{ number_format($enrollmentCount) }} enrollments</span>
     </article>
 </div>
 
@@ -86,7 +80,10 @@
 
     <section class="panel">
         <div class="panel-heading">
-            <h2>Program Head actions</h2>
+            <div>
+                <h2>Program Head actions</h2>
+                <p>Common tasks for managing the program.</p>
+            </div>
         </div>
 
         <a class="quick-link" href="{{ route('program-head.subjects.index') }}">

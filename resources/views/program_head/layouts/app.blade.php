@@ -23,7 +23,7 @@
     ])
 </head>
 
-<body>
+<body class="portal-page role-{{ auth()->user()->role }}">
 <div class="shell">
 
     <aside class="sidebar">
@@ -33,14 +33,20 @@
             class="brand"
             href="{{ route('dashboard') }}"
         >
-            <span class="brand-logo">N</span>
+            <span class="brand-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 3.5 18.5 6v5.2c0 4.3-2.7 7.9-6.5 9.3-3.8-1.4-6.5-5-6.5-9.3V6L12 3.5Z"></path>
+                </svg>
+            </span>
 
             <span>
-                Northbridge
-
-                <small>
-                    {{ ['admin' => 'SYSTEM ADMIN PORTAL', 'faculty' => 'FACULTY PORTAL', 'student' => 'STUDENT PORTAL'][auth()->user()->role] ?? 'PROGRAM HEAD PORTAL' }}
-                </small>
+                @if(in_array(auth()->user()->role, ['admin', 'program_head', 'faculty'], true))
+                    {{ auth()->user()->role === 'faculty' ? 'Faculty' : 'Program Head' }}
+                    <small>Panel</small>
+                @else
+                    Northbridge
+                    <small>{{ ['student' => 'STUDENT PORTAL'][auth()->user()->role] ?? 'PORTAL' }}</small>
+                @endif
             </span>
         </a>
 
@@ -192,13 +198,15 @@
             @endif
         </nav>
 
-        <div class="help-card">
-            <strong>Need assistance?</strong>
+        @if(auth()->user()->role === 'student')
+            <div class="help-card">
+                <strong>Need assistance?</strong>
 
-            <small>
-                Contact campus IT for portal and access support.
-            </small>
-        </div>
+                <small>
+                    Contact campus IT for portal and access support.
+                </small>
+            </div>
+        @endif
 
     </aside>
 
@@ -206,7 +214,7 @@
 
         <header class="topbar">
 
-            <div>
+            <div class="topbar-context">
                 <strong>
                     @yield(
                         'heading',
@@ -222,7 +230,21 @@
                 </small>
             </div>
 
+            @if(auth()->user()->role === 'program_head')
+                <label class="header-search">
+                    <span aria-hidden="true">⌕</span>
+                    <input type="search" placeholder="Search..." aria-label="Search">
+                </label>
+            @endif
+
             <div class="profile">
+
+                @if(auth()->user()->role === 'program_head')
+                    <button class="header-icon" type="button" aria-label="Notifications">
+                        ♧
+                        <i></i>
+                    </button>
+                @endif
 
                 <span class="avatar">
                     {{
