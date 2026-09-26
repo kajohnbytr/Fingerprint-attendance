@@ -12,14 +12,14 @@
 
     @foreach(['student_number' => ['Student ID', 30], 'first_name' => ['First name', 80], 'last_name' => ['Last name', 80], 'email' => ['Email', 255], 'subject' => ['Subject', 100]] as $field => [$label, $maxLength])
         <label>{{ $label }}
-            <input name="{{ $field }}" type="{{ $field === 'email' ? 'email' : 'text' }}" value="{{ old($field, $student->$field) }}" maxlength="{{ $maxLength }}" required>
+            <input name="{{ $field }}" type="{{ $field === 'email' ? 'email' : 'text' }}" value="{{ old($field, $student->$field) }}" maxlength="{{ $maxLength }}" @required($field !== 'email' && $field !== 'subject')>
         </label>
     @endforeach
 
     <label>Year level
         <select name="year_level" required>
             @for($year = 1; $year <= 6; $year++)
-                <option value="{{ $year }}" @selected((int) old('year_level', $student->year_level ?? 1) === $year)>Year {{ $year }}</option>
+                <option value="{{ $year }}" @selected((int) old('year_level', $student->year_level ?? 4) === $year)>Year {{ $year }}</option>
             @endfor
         </select>
     </label>

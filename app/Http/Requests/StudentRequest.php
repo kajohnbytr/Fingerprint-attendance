@@ -39,14 +39,14 @@ class StudentRequest extends FormRequest
             ],
 
             'email' => [
-                'required',
+                'nullable',
                 'email:rfc',
                 'max:255',
                 Rule::unique('students')->ignore($student),
             ],
 
             'subject' => [
-                'required',
+                'nullable',
                 'string',
                 'max:100',
             ],

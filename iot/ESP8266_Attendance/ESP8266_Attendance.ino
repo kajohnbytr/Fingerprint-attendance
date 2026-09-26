@@ -183,10 +183,10 @@ unsigned long resetDebounceTime = 0;
 // ============================================================
 
 const char* WIFI_NAME =
-  "YOUR_WIFI_NAME";
+  "HUAWEI-2.4G-W9Tv";
 
 const char* WIFI_PASSWORD =
-  "YOUR_WIFI_PASSWORD";
+  "eWw5JHcq";
 
 
 // ============================================================
@@ -228,7 +228,7 @@ ESP8266WebServer server(80);
 
 // Change these before deploying the device.
 const char* PH_USERNAME = "programhead";
-const char* PH_PASSWORD = "CHANGE_PORTAL_PASSWORD";
+const char* PH_PASSWORD = "admin";
 
 
 // ============================================================
@@ -250,16 +250,19 @@ const char* PH_PASSWORD = "CHANGE_PORTAL_PASSWORD";
   Leave an endpoint empty until the backend route is ready.
 */
 const char* BASE_URL =
-  "http://YOUR_LAPTOP_IP:8000";
+  "http://192.168.100.34:8000";
 
 const char* STUDENT_API_URL =
-  "http://YOUR_LAPTOP_IP:8000/api/students";
+  "http://192.168.100.34:8000/api/students";
 
 const char* ATTENDANCE_API_URL =
-  "http://YOUR_LAPTOP_IP:8000/api/readings";
+  "http://192.168.100.34:8000/api/readings";
+
+const char* BACKEND_HEALTH_URL =
+  "http://192.168.100.34:8000/api/health";
 
 const char* BACKEND_API_KEY =
-  "YOUR_NEW_PRIVATE_SANCTUM_TOKEN";
+  "8PNG5RbdDBg8IZcN4jK9W49noTKK7LG0wdJRbvv9d32db3e2";
 
 const char* BACKEND_API_KEY_HEADER =
   "Authorization";
@@ -415,6 +418,10 @@ void setupTime();
 
 uint8_t enrollFingerprint(
   uint16_t id
+);
+
+const char* fingerErrorText(
+  int code
 );
 
 void processWebEnrollment();
@@ -1249,15 +1256,84 @@ const char LOGIN_HTML[] PROGMEM = R"rawliteral(
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#000000">
 <title>Program Head Login</title>
 <style>
-body{font-family:Arial,sans-serif;background:#eff6ff;margin:0;min-height:100vh;display:grid;place-items:center}
-main{background:#fff;padding:28px;border-radius:18px;box-shadow:0 10px 35px rgba(0,0,0,.08);width:min(90%,360px)}
-h1{font-size:24px;margin-top:0} input,button{width:100%;box-sizing:border-box;padding:13px;margin:6px 0;border-radius:10px;font-size:16px}
-input{border:1px solid #d1d5db}button{border:0;background:#2563eb;color:#fff;font-weight:bold}#message{color:#b91c1c;min-height:22px}
+:root {
+  --canvas: #ffffff;
+  --surface-soft: #f5f5f5;
+  --hairline: #e5e5e5;
+  --ink: #090909;
+  --body: #737373;
+  --muted: #a3a3a3;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: "SF Pro Rounded", "Segoe UI", Arial, sans-serif;
+}
+main {
+  width: min(92vw, 420px);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 28px;
+  padding: 30px 26px 24px;
+}
+h1 {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(2.1rem, 5vw, 2.9rem);
+  line-height: 1.08;
+  letter-spacing: -0.06em;
+  font-weight: 600;
+}
+p {
+  margin: 12px 0 22px;
+  color: var(--body);
+  text-align: center;
+  font-size: 0.96rem;
+}
+form {
+  display: grid;
+  gap: 10px;
+}
+input, button {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 1rem;
+}
+input {
+  border: 1px solid var(--hairline);
+  background: var(--surface-soft);
+  border-radius: 999px;
+  padding: 15px 16px;
+  color: var(--ink);
+}
+button {
+  border: none;
+  border-radius: 999px;
+  background: #000000;
+  color: #ffffff;
+  padding: 15px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+}
+#message {
+  min-height: 22px;
+  margin-top: 14px;
+  color: #b91c1c;
+  text-align: center;
+  font-size: 0.9rem;
+}
 </style>
 </head>
-<body><main><h1>Program Head Login</h1><p>Attendance Management Portal</p>
+<body><main><h1>Program Head</h1><p>Attendance Management Portal</p>
 <form onsubmit="login();return false">
 <input id="username" autocomplete="username" placeholder="Username" required>
 <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
@@ -1288,7 +1364,7 @@ const char PORTAL_HTML[] PROGMEM = R"rawliteral(
 
 <meta
   name="theme-color"
-  content="#2563eb"
+  content="#000000"
 >
 
 <title>
@@ -1298,373 +1374,286 @@ Program Head - Attendance
 
 <style>
 
+:root {
+  --canvas: #ffffff;
+  --surface-soft: #f5f5f5;
+  --hairline: #e5e5e5;
+  --ink: #090909;
+  --body: #737373;
+  --muted: #a3a3a3;
+  --white: #ffffff;
+}
+
 * {
   box-sizing: border-box;
 }
 
-
 body {
-
   margin: 0;
-
-  background:
-    linear-gradient(
-      135deg,
-      #eff6ff,
-      #f8fafc
-    );
-
-  font-family:
-    Arial,
-    Helvetica,
-    sans-serif;
-
-  color: #111827;
-
+  background: var(--canvas);
+  font-family: "SF Pro Rounded", "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
   min-height: 100vh;
 }
 
-
 .container {
-
-  width: 100%;
-
-  max-width: 850px;
-
-  margin: auto;
-
-  padding: 20px;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 26px 18px 48px;
 }
-
 
 .header {
-
-  background: white;
-
-  border-radius: 20px;
-
-  padding: 22px;
-
-  box-shadow:
-    0 10px 35px
-    rgba(0,0,0,.08);
-
-  margin-bottom: 18px;
+  padding: 18px 0 10px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 20px;
 }
-
 
 .header h1 {
-
   margin: 0;
-
-  font-size: 25px;
+  text-align: center;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  line-height: 1.06;
+  letter-spacing: -0.06em;
+  font-weight: 600;
 }
-
 
 .header p {
-
-  margin: 7px 0 0;
-
-  color: #6b7280;
+  margin: 10px auto 0;
+  max-width: 42ch;
+  text-align: center;
+  color: var(--body);
+  font-size: 1rem;
 }
-
 
 .tabs {
-
   display: flex;
-
   gap: 8px;
-
   overflow-x: auto;
-
-  margin-bottom: 18px;
+  margin: 18px 0 16px;
+  padding-bottom: 4px;
 }
-
 
 .tab {
-
   flex: 1;
-
   min-width: 120px;
-
-  border: none;
-
-  background: white;
-
-  color: #4b5563;
-
-  padding: 13px 16px;
-
-  border-radius: 12px;
-
-  font-weight: bold;
-
+  border: 1px solid var(--hairline);
+  background: var(--surface-soft);
+  color: #374151;
+  padding: 12px 14px;
+  border-radius: 999px;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
-
 
 .tab.active {
-
-  background: #2563eb;
-
-  color: white;
+  background: #000000;
+  color: var(--white);
+  border-color: #000000;
 }
 
-
 .page {
-
   display: none;
 }
 
-
 .page.active {
-
   display: block;
 }
 
-
 .card {
-
-  background: white;
-
-  border-radius: 20px;
-
+  background: var(--white);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
   padding: 22px;
-
-  margin-bottom: 18px;
-
-  box-shadow:
-    0 10px 35px
-    rgba(0,0,0,.08);
+  margin-bottom: 16px;
 }
 
-
 .stats {
-
   display: grid;
-
-  grid-template-columns:
-    repeat(
-      3,
-      1fr
-    );
-
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
-
-.stat {
-
-  background: #f8fafc;
-
-  border-radius: 15px;
-
-  padding: 18px;
+.connection-card h3 {
+  margin-top: 0;
 }
 
-
-.stat-number {
-
-  font-size: 28px;
-
-  font-weight: bold;
-
-  color: #2563eb;
-}
-
-
-.stat-label {
-
-  color: #6b7280;
-
-  margin-top: 4px;
-}
-
-
-input {
-
-  width: 100%;
-
-  padding: 13px;
-
-  border:
-    1px solid #d1d5db;
-
-  border-radius: 11px;
-
-  font-size: 16px;
-
-  margin-bottom: 10px;
-}
-
-
-button.action {
-
-  width: 100%;
-
-  border: none;
-
-  padding: 13px;
-
-  border-radius: 11px;
-
-  font-weight: bold;
-
-  background: #2563eb;
-
-  color: white;
-
-  cursor: pointer;
-
-  margin-top: 7px;
-}
-
-
-button.delete {
-
-  background: #dc2626;
-}
-
-
-button.restart {
-
-  background: #6b7280;
-}
-
-
-.status {
-
-  background: #eff6ff;
-
-  padding: 14px;
-
-  border-radius: 12px;
-
-  margin-top: 12px;
-
-  line-height: 1.5;
-}
-
-
-.table-wrap {
-
-  overflow-x: auto;
-}
-
-
-table {
-
-  width: 100%;
-
-  border-collapse: collapse;
-
-  min-width: 600px;
-}
-
-
-th,
-td {
-
-  padding: 12px;
-
-  border-bottom:
-    1px solid #e5e7eb;
-
-  text-align: left;
-
-  white-space: nowrap;
-}
-
-
-th {
-
-  background: #f8fafc;
-
-  color: #374151;
-}
-
-
-.badge {
-
-  display: inline-block;
-
-  padding: 5px 9px;
-
-  border-radius: 999px;
-
-  font-size: 12px;
-
-  font-weight: bold;
-}
-
-
-.badge.enrolled {
-
-  background: #dcfce7;
-
-  color: #166534;
-}
-
-
-.badge.deleted {
-
-  background: #fee2e2;
-
-  color: #991b1b;
-}
-
-
-.empty {
-
-  text-align: center;
-
-  padding: 30px;
-
-  color: #6b7280;
-}
-
-
-.info-grid {
-
+.connection-list {
   display: grid;
-
-  grid-template-columns:
-    repeat(
-      2,
-      1fr
-    );
-
   gap: 10px;
 }
 
+.connection-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.connection-name {
+  font-weight: 600;
+}
+
+.connection-detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--body);
+  font-size: 12px;
+}
+
+.connection-status {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connection-status.online {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.stat {
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.stat-number {
+  font-size: 2rem;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  color: #000000;
+}
+
+.stat-label {
+  color: var(--body);
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+
+input {
+  width: 100%;
+  padding: 14px 15px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+button.action {
+  width: 100%;
+  border: none;
+  padding: 15px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: #000000;
+  color: var(--white);
+  cursor: pointer;
+  margin-top: 7px;
+}
+
+button.delete {
+  background: #dc2626;
+}
+
+button.restart {
+  background: #374151;
+}
+
+.status {
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
+  padding: 14px 15px;
+  border-radius: 14px;
+  margin-top: 12px;
+  line-height: 1.5;
+  color: var(--body);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+th,
+td {
+  padding: 12px;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  background: var(--surface-soft);
+  color: #374151;
+}
+
+.badge {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge.enrolled {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.deleted {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.empty {
+  text-align: center;
+  padding: 30px;
+  color: var(--body);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
 
 .info-item {
-
-  background: #f8fafc;
-
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
   padding: 14px;
-
   border-radius: 12px;
 }
 
-
 .info-label {
-
   font-size: 12px;
-
-  color: #6b7280;
+  color: var(--body);
 }
 
-
 .info-value {
-
-  font-weight: bold;
-
+  font-weight: 600;
   margin-top: 4px;
 }
 
 .registration-intro {
-  color: #64748b;
+  color: var(--body);
   line-height: 1.5;
   margin-top: -4px;
 }
@@ -1672,23 +1661,23 @@ th {
 .field-label {
   display: block;
   font-size: 13px;
-  font-weight: bold;
+  font-weight: 600;
   color: #475569;
   margin: 16px 0 7px;
 }
 
 .choice-panel {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--hairline);
   border-radius: 14px;
   overflow: hidden;
-  background: #f8fafc;
+  background: var(--surface-soft);
 }
 
 .choice-panel summary {
   list-style: none;
   cursor: pointer;
   padding: 15px;
-  font-weight: bold;
+  font-weight: 600;
   color: #334155;
 }
 
@@ -1699,7 +1688,7 @@ th {
 .choice-panel summary::after {
   content: "+";
   float: right;
-  color: #2563eb;
+  color: #000000;
   font-size: 20px;
   line-height: 16px;
 }
@@ -1717,7 +1706,7 @@ th {
   align-items: flex-start;
   gap: 11px;
   padding: 13px 10px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--hairline);
   color: #334155;
   line-height: 1.35;
   cursor: pointer;
@@ -1728,11 +1717,11 @@ th {
   height: 20px;
   flex: 0 0 20px;
   margin: 0;
-  accent-color: #2563eb;
+  accent-color: #000000;
 }
 
 .selection-hint {
-  color: #64748b;
+  color: var(--body);
   font-size: 13px;
   margin: 7px 2px 0;
 }
@@ -1741,24 +1730,14 @@ th {
   margin-top: 20px !important;
 }
 
-
-@media (
-  max-width: 600px
-) {
-
+@media (max-width: 600px) {
   .stats {
-
-    grid-template-columns:
-      1fr;
+    grid-template-columns: 1fr;
   }
-
 
   .info-grid {
-
-    grid-template-columns:
-      1fr;
+    grid-template-columns: 1fr;
   }
-
 }
 
 </style>
@@ -1779,11 +1758,11 @@ th {
 <div class="header">
 
   <h1>
-    Program Head Dashboard
+    Attendance Portal
   </h1>
 
   <p>
-    Biometric IoT Attendance Management
+    Biometric IoT attendance management for the program head.
   </p>
 
 </div>
@@ -1890,6 +1869,50 @@ th {
 
       </div>
 
+
+    </div>
+
+  </div>
+
+  <div class="card connection-card">
+
+    <h3>
+      Connection Status
+    </h3>
+
+    <div class="connection-list">
+
+      <div class="connection-item">
+        <div>
+          <div class="connection-name">ESP8266 WiFi</div>
+          <span id="connectionWifiDetail" class="connection-detail">Checking device network...</span>
+        </div>
+        <span id="connectionWifiStatus" class="connection-status">Checking</span>
+      </div>
+
+      <div class="connection-item">
+        <div>
+          <div class="connection-name">Backend TCP port</div>
+          <span id="connectionTcpDetail" class="connection-detail">Checking backend host and port...</span>
+        </div>
+        <span id="connectionTcpStatus" class="connection-status">Checking</span>
+      </div>
+
+      <div class="connection-item">
+        <div>
+          <div class="connection-name">Backend HTTP</div>
+          <span id="connectionHttpDetail" class="connection-detail">Checking backend response...</span>
+        </div>
+        <span id="connectionHttpStatus" class="connection-status">Checking</span>
+      </div>
+
+      <div class="connection-item">
+        <div>
+          <div class="connection-name">Backend database</div>
+          <span id="connectionDatabaseDetail" class="connection-detail">Checking database health endpoint...</span>
+        </div>
+        <span id="connectionDatabaseStatus" class="connection-status">Checking</span>
+      </div>
 
     </div>
 
@@ -2011,29 +2034,9 @@ th {
     <input id="studentLastName" maxlength="20" placeholder="Last name">
     <input id="studentId" maxlength="16" placeholder="03-XXXX-XXXXX">
 
-    <span class="field-label">Block</span>
-    <details class="choice-panel">
-      <summary id="sectionSummary">Block</summary>
-      <div class="choice-list">
-        <label class="choice"><input type="checkbox" name="studentSection" value="UP-FB1S26-IT4-06" onchange="selectSection(this)"> <span>UP-FB1S26-IT4-06</span></label>
-        <label class="choice"><input type="checkbox" name="studentSection" value="UP-FB1S26-IT4-07" onchange="selectSection(this)"> <span>UP-FB1S26-IT4-07</span></label>
-      </div>
-    </details>
-    <div class="selection-hint">Assign Section.</div>
+    <div class="selection-hint">Email, block, and subjects are completed later in Laravel.</div>
 
-    <span class="field-label">Subjects</span>
-    <details class="choice-panel">
-      <summary id="subjectSummary">Choose subjects</summary>
-      <div class="choice-list">
-        <label class="choice"><input type="checkbox" name="studentSubject" value="1" onchange="updateSubjectSummary()"> <span><strong>ITE 310</strong><br>Capstone Project and Research 2</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="2" onchange="updateSubjectSummary()"> <span><strong>ITE 367</strong><br>Managing IT Resources (Including Social &amp; Professional Issues)</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="4" onchange="updateSubjectSummary()"> <span><strong>ITE 381</strong><br>IT Business Solutions</span></label>
-        <label class="choice"><input type="checkbox" name="studentSubject" value="8" onchange="updateSubjectSummary()"> <span><strong>Others</strong><br>Please refer to registrar</span></label>
-      </div>
-    </details>
-    <div class="selection-hint">You can select multiple subjects.</div>
-
-    <button id="studentRegisterButton" class="action student-save" onclick="registerStudent()">Save details and register fingerprint</button>
+    <button id="studentRegisterButton" class="action student-save" onclick="registerStudent()">Register student and fingerprint</button>
     <div id="studentOperationStatus" class="status">Ready.</div>
   </div>
 
@@ -2317,8 +2320,63 @@ function loadDashboard() {
         )
         .innerText =
         data.time;
+
+      updateConnectionStatus(
+        "connectionWifiStatus",
+        "connectionWifiDetail",
+        data.wifi,
+        data.wifi ? "Connected" : "Disconnected",
+        data.wifi
+          ? "ESP8266 is connected to the configured WiFi network."
+          : "ESP8266 is not connected to the configured WiFi network."
+      );
+
+      updateConnectionStatus(
+        "connectionTcpStatus",
+        "connectionTcpDetail",
+        data.backend_tcp,
+        data.backend_tcp ? "Reachable" : "Offline",
+        data.backend_host + ":" + data.backend_port +
+          (data.backend_tcp
+            ? " accepted a TCP connection."
+            : " did not accept a TCP connection.")
+      );
+
+      updateConnectionStatus(
+        "connectionHttpStatus",
+        "connectionHttpDetail",
+        data.backend_http,
+        data.backend_http ? "Connected" : "Unavailable",
+        data.backend_http_code > 0
+          ? "HTTP response: " + data.backend_http_code
+          : "No HTTP response from " + data.backend_url
+      );
+
+      updateConnectionStatus(
+        "connectionDatabaseStatus",
+        "connectionDatabaseDetail",
+        data.backend_database,
+        data.backend_database ? "Connected" : "Unavailable",
+        data.backend_database_code > 0
+          ? "Database health response: " + data.backend_database_code
+          : "No database health response from the backend."
+      );
     }
   );
+}
+
+
+function updateConnectionStatus(
+  statusId,
+  detailId,
+  isOnline,
+  statusText,
+  detailText
+) {
+  const status = document.getElementById(statusId);
+  status.innerText = statusText;
+  status.classList.toggle("online", isOnline);
+  document.getElementById(detailId).innerText = detailText;
 }
 
 
@@ -2793,13 +2851,9 @@ function registerStudent() {
   const firstName = document.getElementById("studentFirstName").value.trim();
   const lastName = document.getElementById("studentLastName").value.trim();
   const studentId = document.getElementById("studentId").value.trim();
-  const section = document.querySelector('input[name="studentSection"]:checked');
-  const subjects = Array.from(document.querySelectorAll('input[name="studentSubject"]:checked'))
-    .map(input => input.value).join(",");
-
-  if (!firstName || !lastName || !studentId || !section || !subjects) {
-    document.getElementById("studentOperationStatus").innerText =
-      "Enter the name, choose a section, and select at least one subject.";
+  if (!firstName || !lastName || !studentId) {
+  document.getElementById("studentOperationStatus").innerText =
+    "Enter the student's first name, last name, and student ID.";
     return;
   }
 
@@ -2809,9 +2863,7 @@ function registerStudent() {
 
   fetch("/api/register-student?first_name=" + encodeURIComponent(firstName) +
     "&last_name=" + encodeURIComponent(lastName) +
-    "&student_id=" + encodeURIComponent(studentId) +
-    "&section=" + encodeURIComponent(section.value) +
-    "&subjects=" + encodeURIComponent(subjects))
+    "&student_id=" + encodeURIComponent(studentId))
   .then(response => response.json())
   .then(data => {
     document.getElementById("studentOperationStatus").innerText = data.message;
@@ -2826,41 +2878,6 @@ function registerStudent() {
     document.getElementById("studentOperationStatus").innerText = "Connection error.";
     document.getElementById("studentRegisterButton").disabled = false;
   });
-}
-
-
-function selectSection(selected) {
-
-  document
-    .querySelectorAll('input[name="studentSection"]')
-    .forEach(input => {
-      if (input !== selected) {
-        input.checked = false;
-      }
-    });
-
-  document
-    .getElementById("sectionSummary")
-    .innerText =
-    selected.checked
-    ? selected.value
-    : "Choose one section";
-}
-
-
-function updateSubjectSummary() {
-
-  const selected =
-    Array.from(
-      document.querySelectorAll('input[name="studentSubject"]:checked')
-    );
-
-  document
-    .getElementById("subjectSummary")
-    .innerText =
-    selected.length
-    ? selected.length + " subject" + (selected.length === 1 ? "" : "s") + " selected"
-    : "Choose subjects";
 }
 
 
@@ -2889,10 +2906,6 @@ function pollStudentOperation() {
           document.getElementById("studentFirstName").value = "";
           document.getElementById("studentLastName").value = "";
           document.getElementById("studentId").value = "";
-          document.querySelectorAll('input[name="studentSection"],input[name="studentSubject"]')
-            .forEach(input => input.checked = false);
-          document.getElementById("sectionSummary").innerText = "Choose one section";
-          document.getElementById("subjectSummary").innerText = "Choose subjects";
         }
       }
     });
@@ -3158,11 +3171,164 @@ void handleFwlink() {
 // DASHBOARD API
 // ============================================================
 
+bool checkBackendConnection(
+  String& backendHost,
+  uint16_t& backendPort,
+  bool& tcpReachable,
+  bool& httpReachable,
+  int& httpStatusCode,
+  bool& databaseReachable,
+  int& databaseStatusCode
+) {
+  backendHost = "";
+  backendPort = 0;
+  tcpReachable = false;
+  httpReachable = false;
+  httpStatusCode = 0;
+  databaseReachable = false;
+  databaseStatusCode = 0;
+
+  if (
+    BASE_URL == nullptr ||
+    strlen(BASE_URL) == 0 ||
+    WiFi.status() != WL_CONNECTED
+  ) {
+    return false;
+  }
+
+  String backendUrl = String(BASE_URL);
+  int schemeEnd = backendUrl.indexOf("://");
+  int hostStart = schemeEnd >= 0 ? schemeEnd + 3 : 0;
+  int pathStart = backendUrl.indexOf('/', hostStart);
+  String authority = pathStart >= 0
+    ? backendUrl.substring(hostStart, pathStart)
+    : backendUrl.substring(hostStart);
+
+  int portSeparator = authority.lastIndexOf(':');
+  if (portSeparator > 0) {
+    backendHost = authority.substring(0, portSeparator);
+    backendPort = static_cast<uint16_t>(
+      authority.substring(portSeparator + 1).toInt()
+    );
+  }
+  else {
+    backendHost = authority;
+    backendPort = backendUrl.startsWith("https://") ? 443 : 80;
+  }
+
+  if (
+    backendHost.length() == 0 ||
+    backendPort == 0
+  ) {
+    return false;
+  }
+
+  WiFiClient tcpClient;
+  tcpClient.setTimeout(3000);
+  tcpReachable = tcpClient.connect(
+    backendHost.c_str(),
+    backendPort
+  );
+  tcpClient.stop();
+
+  HTTPClient http;
+  http.setTimeout(3000);
+
+  bool initialized = false;
+  if (backendUrl.startsWith("https://")) {
+    backendHttpsClient.setInsecure();
+    initialized = http.begin(backendHttpsClient, backendUrl);
+  }
+  else {
+    initialized = http.begin(backendHttpClient, backendUrl);
+  }
+
+  if (initialized) {
+    httpStatusCode = http.GET();
+    httpReachable =
+      httpStatusCode >= 200 &&
+      httpStatusCode < 400;
+    http.end();
+  }
+
+  if (
+    BACKEND_HEALTH_URL != nullptr &&
+    strlen(BACKEND_HEALTH_URL) > 0
+  ) {
+    HTTPClient healthHttp;
+    healthHttp.setTimeout(3000);
+
+    bool healthInitialized = false;
+    if (String(BACKEND_HEALTH_URL).startsWith("https://")) {
+      backendHttpsClient.setInsecure();
+      healthInitialized = healthHttp.begin(
+        backendHttpsClient,
+        BACKEND_HEALTH_URL
+      );
+    }
+    else {
+      healthInitialized = healthHttp.begin(
+        backendHttpClient,
+        BACKEND_HEALTH_URL
+      );
+    }
+
+    if (healthInitialized) {
+      healthHttp.addHeader("Accept", "application/json");
+
+      if (
+        BACKEND_API_KEY != nullptr &&
+        strlen(BACKEND_API_KEY) > 0
+      ) {
+        if (BACKEND_USE_BEARER_TOKEN) {
+          healthHttp.addHeader(
+            "Authorization",
+            String("Bearer ") + BACKEND_API_KEY
+          );
+        }
+        else {
+          healthHttp.addHeader(
+            BACKEND_API_KEY_HEADER,
+            BACKEND_API_KEY
+          );
+        }
+      }
+
+      databaseStatusCode = healthHttp.GET();
+      databaseReachable =
+        databaseStatusCode >= 200 &&
+        databaseStatusCode < 300;
+      healthHttp.end();
+    }
+  }
+
+  return tcpReachable || httpReachable;
+}
+
+
 void handleDashboard() {
 
   if (!requirePortalAuthentication()) {
     return;
   }
+
+  String backendHost;
+  uint16_t backendPort = 0;
+  bool backendTcpReachable = false;
+  bool backendHttpReachable = false;
+  int backendHttpStatusCode = 0;
+  bool backendDatabaseReachable = false;
+  int backendDatabaseStatusCode = 0;
+
+  checkBackendConnection(
+    backendHost,
+    backendPort,
+    backendTcpReachable,
+    backendHttpReachable,
+    backendHttpStatusCode,
+    backendDatabaseReachable,
+    backendDatabaseStatusCode
+  );
 
   int enrolledCount = 0;
 
@@ -3237,6 +3403,40 @@ void handleDashboard() {
     ",\"time\":\"" +
     getCurrentTimestamp() +
     "\"";
+
+  json +=
+    ",\"backend_url\":\"" +
+    String(BASE_URL == nullptr ? "" : BASE_URL) +
+    "\"";
+
+  json +=
+    ",\"backend_host\":\"" +
+    backendHost +
+    "\"";
+
+  json +=
+    ",\"backend_port\":" +
+    String(backendPort);
+
+  json +=
+    ",\"backend_tcp\":" +
+    String(backendTcpReachable ? "true" : "false");
+
+  json +=
+    ",\"backend_http\":" +
+    String(backendHttpReachable ? "true" : "false");
+
+  json +=
+    ",\"backend_http_code\":" +
+    String(backendHttpStatusCode);
+
+  json +=
+    ",\"backend_database\":" +
+    String(backendDatabaseReachable ? "true" : "false");
+
+  json +=
+    ",\"backend_database_code\":" +
+    String(backendDatabaseStatusCode);
 
 
   json +=
@@ -3557,14 +3757,12 @@ void handleStudentRegister() {
     if (
       !server.hasArg("first_name") ||
       !server.hasArg("last_name") ||
-      !server.hasArg("student_id") ||
-      !server.hasArg("section") ||
-      !server.hasArg("subjects")
+      !server.hasArg("student_id")
     ) {
       server.send(
         400,
         "application/json",
-        "{\"success\":false,\"message\":\"Student name, section, and subjects are required.\"}"
+        "{\"success\":false,\"message\":\"Student name and student ID are required.\"}"
       );
       return;
     }
@@ -3572,43 +3770,15 @@ void handleStudentRegister() {
     String firstName = server.arg("first_name");
     String lastName = server.arg("last_name");
     String studentId = server.arg("student_id");
-    String section = server.arg("section");
-    String subjects = server.arg("subjects");
-
     if (
       !isStudentFieldValid(firstName, 20) ||
       !isStudentFieldValid(lastName, 20) ||
-      !isStudentFieldValid(studentId, 16) ||
-      !isStudentFieldValid(section, 20)
+      !isStudentFieldValid(studentId, 16)
     ) {
       server.send(
         400,
         "application/json",
         "{\"success\":false,\"message\":\"Invalid student details.\"}"
-      );
-      return;
-    }
-
-    uint8_t subjectMask = 0;
-    int start = 0;
-
-    while (start < subjects.length()) {
-      int comma = subjects.indexOf(',', start);
-      if (comma < 0) comma = subjects.length();
-
-      int subject = subjects.substring(start, comma).toInt();
-      if (subject == 1 || subject == 2 || subject == 4 || subject == 8) {
-        subjectMask |= subject;
-      }
-
-      start = comma + 1;
-    }
-
-    if (subjectMask == 0) {
-      server.send(
-        400,
-        "application/json",
-        "{\"success\":false,\"message\":\"Select at least one subject.\"}"
       );
       return;
     }
@@ -3625,11 +3795,11 @@ void handleStudentRegister() {
 
     memset(&pendingStudent, 0, sizeof(pendingStudent));
     pendingStudent.fingerprintId = id;
-    pendingStudent.subjectMask = subjectMask;
+    pendingStudent.subjectMask = 0;
     studentId.toCharArray(pendingStudent.studentId, sizeof(pendingStudent.studentId));
     firstName.toCharArray(pendingStudent.firstName, sizeof(pendingStudent.firstName));
     lastName.toCharArray(pendingStudent.lastName, sizeof(pendingStudent.lastName));
-    section.toCharArray(pendingStudent.section, sizeof(pendingStudent.section));
+    pendingStudent.section[0] = '\0';
     pendingStudentActive = true;
     pendingEnrollId = id;
   }
@@ -5751,21 +5921,21 @@ void loop() {
   delay(80);
 }
 
-//Do not create a new token every demo
-//The API token is stored inside the ESP8266 firmware. Only create a new token if:
-//the old token was revoked;
-//you changed the device ID;
-//you changed the backend user;
-//the token was exposed publicly.
+// Do not create a new token every demo
+// The API token is stored inside the ESP8266 firmware. Only create a new token if:
+// the old token was revoked;
+// you changed the device ID;
+// you changed the backend user;
+// the token was exposed publicly.
 
-//php artisan tinker --execute "echo App\Models\User::where('email', 'admin@northbridge.test')->firstOrFail()->createToken('attendance-esp8266-01', ['students:create','attendance:create'])->plainTextToken;"
+// php artisan tinker --execute "echo App\Models\User::where('email', 'admin@northbridge.test')->firstOrFail()->createToken('attendance-esp8266-01', ['students:create','attendance:create'])->plainTextToken;"
 
 
-//Running Commands
-//cd C:\Users\aronj\Downloads\backend_cap
-//php artisan config:clear
-//php artisan migrate --force
-//php artisan serve --host=0.0.0.0 --port=8000
+// Running Commands
+// cd C:\Users\aronj\Downloads\backend_cap
+// php artisan config:clear
+// php artisan migrate --force
+// php artisan serve --host=0.0.0.0 --port=8000
 
 // Testing Commands
 // Invoke-WebRequest http://localhost:8000 -UseBasicParsing
