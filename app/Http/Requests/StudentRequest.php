@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -39,9 +40,16 @@ class StudentRequest extends FormRequest
             ],
 
             'email' => [
-                'nullable',
+                'required',
                 'email:rfc',
                 'max:255',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    $email = mb_strtolower(trim((string) $value));
+                    if (! str_ends_with($email, '@phinmaed.com')
+                        && ! str_ends_with($email, '@phinmaed.edu.ph')) {
+                        $fail('Use your PHINMAED email address.');
+                    }
+                },
                 Rule::unique('students')->ignore($student),
             ],
 
@@ -67,6 +75,13 @@ class StudentRequest extends FormRequest
                 'required',
                 'in:active,inactive,graduated',
             ],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'A PHINMAED email address is required for attendance confirmations.',
         ];
     }
 }

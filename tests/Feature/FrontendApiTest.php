@@ -1,0 +1,205 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Block;
+use App\Models\Student;
+use App\Models\Subject;
+use App\Models\User;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Tests\TestCase;
+
+class FrontendApiTest extends TestCase
+{
+    use LazilyRefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_frontend_origin_can_request_csrf_cookie_with_credentials(): void
+    {
+        $this->withHeader('Origin', 'http://localhost:8080')
+            ->get('/sanctum/csrf-cookie')
+            ->assertNoContent()
+            ->assertHeader('Access-Control-Allow-Origin', 'http://localhost:8080')
+            ->assertHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    public function test_spa_can_log_in_read_its_session_and_log_out(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'admin',
+            'email' => 'admin@example.test',
+        ]);
+        $this->withHeader('Origin', 'http://localhost:8080');
+
+        $loginResponse = $this->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'password',
+            'expectedRole' => 'admin',
+        ])->assertOk()
+            ->assertJsonPath('user.email', $user->email)
+            ->assertJsonPath('user.role', 'admin');
+
+        $token = $loginResponse->json('token');
+        $this->withToken($token)->getJson('/api/auth/me')
+            ->assertOk()
+            ->assertJsonPath('user.id', $user->id);
+
+        $this->withToken($token)->postJson('/api/auth/logout')->assertOk();
+        $this->assertDatabaseMissing('personal_access_tokens', [
+            'tokenable_id' => $user->id,
+            'name' => 'capstone-frontend',
+        ]);
+        $this->app['auth']->forgetGuards();
+        $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
+    }
+
+    public function test_spa_login_rejects_inactive_accounts_and_wrong_roles(): void
+    {
+        $inactiveUser = User::factory()->create([
+            'is_active' => false,
+            'email' => 'inactive@example.test',
+        ]);
+        $this->withHeader('Origin', 'http://localhost:8080')
+            ->postJson('/api/auth/login', [
+                'email' => $inactiveUser->email,
+                'password' => 'password',
+            ])->assertUnprocessable();
+
+        $user = User::factory()->create(['role' => 'student']);
+        $this->withHeader('Origin', 'http://localhost:8080')->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'password',
+            'expectedRole' => 'admin',
+        ])->assertForbidden();
+
+        $this->assertGuest();
+    }
+
+    public function test_student_profile_and_courses_use_the_linked_student_record(): void
+    {
+        $block = Block::factory()->create();
+        $student = Student::factory()->create([
+            'block_id' => $block->id,
+            'email' => 'student@phinmaed.edu.ph',
+        ]);
+        $user = User::factory()->create([
+            'role' => 'student',
+            'student_id' => $student->id,
+            'name' => 'Test Student',
+        ]);
+        $subject = Subject::factory()->create([
+            'code' => 'IT101',
+            'day' => now()->format('l'),
+            'start_time' => '08:00',
+            'end_time' => '10:00',
+        ]);
+        DB::table('enrollments')->insert([
+            'student_id' => $student->id,
+            'subject_id' => $subject->id,
+            'block_id' => $block->id,
+            'enrolled_by' => User::factory()->create()->id,
+            'created_at' => now()->subDays(7),
+            'updated_at' => now()->subDays(7),
+        ]);
+
+        $this->actingAs($user)->getJson('/api/students/profile')
+            ->assertOk()
+            ->assertJsonPath('profile.email', 'student@phinmaed.edu.ph')
+            ->assertJsonPath('profile.block', $block->name);
+
+        $this->actingAs($user)->getJson('/api/students/courses')
+            ->assertOk()
+            ->assertJsonPath('courses.0.courseName', 'IT101 - Introduction to Computing');
+    }
+
+    public function test_student_can_update_their_name_and_password_but_not_change_their_block(): void
+    {
+        $block = Block::factory()->create();
+        $otherBlock = Block::factory()->create();
+        $student = Student::factory()->create([
+            'block_id' => $block->id,
+            'email' => 'student@phinmaed.com',
+        ]);
+        $user = User::factory()->create([
+            'role' => 'student',
+            'student_id' => $student->id,
+            'password' => 'password',
+        ]);
+
+        $this->actingAs($user)->putJson('/api/students/profile', [
+            'name' => 'Updated Student',
+            'block' => $block->name,
+        ])->assertOk()
+            ->assertJsonPath('profile.name', 'Updated Student');
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => 'Updated Student',
+        ]);
+
+        $this->putJson('/api/students/profile', [
+            'name' => 'Updated Student',
+            'block' => $otherBlock->name,
+        ])->assertUnprocessable();
+
+        $this->putJson('/api/students/password', [
+            'currentPassword' => 'password',
+            'newPassword' => 'new-secure-password',
+            'confirmPassword' => 'new-secure-password',
+        ])->assertOk();
+        $this->assertTrue(Hash::check('new-secure-password', $user->fresh()->password));
+    }
+
+    public function test_student_attendance_returns_recorded_and_missed_scheduled_classes(): void
+    {
+        Carbon::setTestNow('2026-09-22 10:00:00');
+        $block = Block::factory()->create();
+        $student = Student::factory()->create([
+            'block_id' => $block->id,
+            'email' => 'student@phinmaed.com',
+        ]);
+        $faculty = User::factory()->create();
+        $studentUser = User::factory()->create([
+            'role' => 'student',
+            'student_id' => $student->id,
+        ]);
+        $today = now();
+        $subject = Subject::factory()->create([
+            'code' => 'IT201',
+            'day' => $today->format('l'),
+            'start_time' => $today->copy()->subHours(2)->format('H:i:s'),
+            'end_time' => $today->copy()->subHour()->format('H:i:s'),
+        ]);
+        DB::table('enrollments')->insert([
+            'student_id' => $student->id,
+            'subject_id' => $subject->id,
+            'block_id' => $block->id,
+            'enrolled_by' => $faculty->id,
+            'created_at' => $today->copy()->subDays(7),
+            'updated_at' => $today->copy()->subDays(7),
+        ]);
+        DB::table('fingerprint_attendance_events')->insert([
+            'student_id' => $student->student_number,
+            'device_id' => 'sensor-01',
+            'fingerprint_id' => 1,
+            'subject_id' => $subject->id,
+            'scanned_at' => $today->copy()->subHours(2),
+            'email_sent_at' => $today->copy()->subHours(2),
+            'created_at' => $today->copy()->subHours(2),
+            'updated_at' => $today->copy()->subHours(2),
+        ]);
+
+        $this->actingAs($studentUser)->getJson('/api/students/attendance')
+            ->assertOk()
+            ->assertJsonPath('stats.presentDays', 1)
+            ->assertJsonPath('records.0.status', 'Present')
+            ->assertJsonPath('records.0.note', 'IT201 - Introduction to Computing');
+    }
+}

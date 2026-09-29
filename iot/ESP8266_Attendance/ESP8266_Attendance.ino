@@ -12,7 +12,7 @@
   - Fingerprint deletion
   - Program Head dashboard
   - Program Head login
-  - Student registration with section and subjects
+  - Student registration with PHINMAED email and subjects
   - EEPROM student records
   - Enrolled ID list
   - Enrollment logs 
@@ -41,6 +41,7 @@
   RESET
   ------------------------------------------------------------
   D7
+  Deep-sleep wake: connect D0/GPIO16 to RST
 
   SERIAL COMMANDS
   ------------------------------------------------------------
@@ -81,6 +82,8 @@
 
 #define EEPROM_MAGIC 0xA55A1234UL
 #define STUDENT_EEPROM_MAGIC 0x53545544UL
+#define PREVIOUS_STUDENT_EEPROM_MAGIC 0x53545545UL
+#define STUDENT_EMAIL_EEPROM_MAGIC 0x5354454CUL
 
 const uint16_t EEPROM_MAGIC_ADDR = 0;
 
@@ -97,6 +100,7 @@ const uint16_t EEPROM_RECORD_ADDR =
 
 #define MAX_ENROLL_RECORDS 100
 #define MAX_STUDENT_RECORDS 21
+#define STUDENT_EMAIL_MAX_LENGTH 48
 
 
 
@@ -123,12 +127,20 @@ struct EnrollmentRecord {
 };
 
 
-EnrollmentRecord enrollmentRecords[
-  MAX_ENROLL_RECORDS
-];
+EnrollmentRecord enrollmentRecords[MAX_ENROLL_RECORDS];
 
 
 uint16_t enrollmentRecordCount = 0;
+
+struct StudentEmailRecord {
+  char localPart[36];
+  uint8_t domain;
+};
+
+const uint16_t STUDENT_EMAIL_EEPROM_MAGIC_ADDR =
+  EEPROM_RECORD_ADDR + MAX_ENROLL_RECORDS * sizeof(EnrollmentRecord);
+const uint16_t STUDENT_EMAIL_EEPROM_RECORD_ADDR =
+  STUDENT_EMAIL_EEPROM_MAGIC_ADDR + sizeof(uint32_t);
 
 const uint16_t STUDENT_EEPROM_MAGIC_ADDR = 2048;
 const uint16_t STUDENT_EEPROM_COUNT_ADDR =
@@ -146,7 +158,27 @@ struct StudentRecord {
   char section[21];
 };
 
+struct PreviousStudentRecord {
+  uint16_t fingerprintId;
+  uint32_t timestamp;
+  uint8_t subjectMask;
+  char studentId[17];
+  char firstName[21];
+  char lastName[21];
+  char email[STUDENT_EMAIL_MAX_LENGTH + 1];
+};
+
+static_assert(
+  STUDENT_EEPROM_RECORD_ADDR + MAX_STUDENT_RECORDS * sizeof(StudentRecord) <= EEPROM_SIZE,
+  "Student records exceed the configured EEPROM size.");
+static_assert(
+  STUDENT_EMAIL_EEPROM_RECORD_ADDR + MAX_STUDENT_RECORDS * sizeof(StudentEmailRecord)
+    <= STUDENT_EEPROM_MAGIC_ADDR,
+  "Student email records overlap the student record area.");
+
 StudentRecord studentRecords[MAX_STUDENT_RECORDS];
+StudentEmailRecord studentEmails[MAX_STUDENT_RECORDS];
+StudentEmailRecord pendingStudentEmail;
 uint16_t studentRecordCount = 0;
 
 // Retry stored student records one at a time after Wi-Fi connects.
@@ -180,13 +212,21 @@ unsigned long resetDebounceTime = 0;
 
 // ============================================================
 // WIFI
+// HUAWEI-2.4G-W9Tv, Redmi K40 Gaming
+// eWw5JHcq, 12345678
 // ============================================================
 
-const char* WIFI_NAME =
-  "HUAWEI-2.4G-W9Tv";
+// Keep both lists in the same order. Commas separate network entries.
+// SSIDs and passwords that contain commas are not supported.
+const char* WIFI_NAMES =
+  "HUAWEI-2.4G-W9Tv,Redmi K40 Gaming";
 
-const char* WIFI_PASSWORD =
-  "eWw5JHcq";
+const char* WIFI_PASSWORDS =
+  "eWw5JHcq,12345678";
+
+const unsigned long WIFI_CONNECT_TIMEOUT_MS = 12000;
+const unsigned long WIFI_RECONNECT_INTERVAL_MS = 30000;
+unsigned long lastWiFiAttemptMs = 0;
 
 
 // ============================================================
@@ -203,28 +243,29 @@ IPAddress AP_IP(
   192,
   168,
   4,
-  1
-);
+  1);
 
 IPAddress AP_GATEWAY(
   192,
   168,
   4,
-  1
-);
+  1);
 
 IPAddress AP_SUBNET(
   255,
   255,
   255,
-  0
-);
+  0);
 
 const byte DNS_PORT = 53;
 
 DNSServer dnsServer;
 
 ESP8266WebServer server(80);
+const unsigned long DEEP_SLEEP_IDLE_TIMEOUT_MS = 5UL * 60UL * 1000UL;
+const uint64_t DEEP_SLEEP_DURATION_US = 30ULL * 1000000ULL;
+unsigned long lastActivityMs = 0;
+unsigned long restoreReadyMessageAtMs = 0;
 
 // Change these before deploying the device.
 const char* PH_USERNAME = "programhead";
@@ -250,16 +291,16 @@ const char* PH_PASSWORD = "admin";
   Leave an endpoint empty until the backend route is ready.
 */
 const char* BASE_URL =
-  "http://192.168.100.34:8000";
+  "http://192.168.100.204:8000";
 
 const char* STUDENT_API_URL =
-  "http://192.168.100.34:8000/api/students";
+  "http://192.168.100.204:8000/api/students";
 
 const char* ATTENDANCE_API_URL =
-  "http://192.168.100.34:8000/api/readings";
+  "http://192.168.100.204:8000/api/readings";
 
 const char* BACKEND_HEALTH_URL =
-  "http://192.168.100.34:8000/api/health";
+  "http://192.168.100.204:8000/api/health";
 
 const char* BACKEND_API_KEY =
   "8PNG5RbdDBg8IZcN4jK9W49noTKK7LG0wdJRbvv9d32db3e2";
@@ -282,14 +323,12 @@ WiFiClientSecure backendHttpsClient;
 // FINGERPRINT
 // ============================================================
 
-SoftwareSerial fingerSerial(  
+SoftwareSerial fingerSerial(
   D5,
-  D6
-);
+  D6);
 
 Adafruit_Fingerprint finger(
-  &fingerSerial
-);
+  &fingerSerial);
 
 
 // ============================================================
@@ -299,8 +338,7 @@ Adafruit_Fingerprint finger(
 LiquidCrystal_I2C lcd(
   0x27,
   16,
-  2
-);
+  2);
 
 
 // ============================================================
@@ -314,8 +352,7 @@ const uint32_t SENSOR_BAUDS[] = {
 };
 
 const size_t SENSOR_BAUDS_COUNT =
-  sizeof(SENSOR_BAUDS) /
-  sizeof(SENSOR_BAUDS[0]);
+  sizeof(SENSOR_BAUDS) / sizeof(SENSOR_BAUDS[0]);
 
 uint32_t activeSensorBaud = 0;
 
@@ -368,6 +405,8 @@ String portalOperationMessage =
 // ============================================================
 
 void servicePortal();
+void maybeEnterDeepSleep();
+void restoreReadyMessageIfDue();
 
 void handleResetButton();
 
@@ -379,83 +418,84 @@ void saveStudentRecords();
 
 void loadStudentRecords();
 
+void saveStudentEmails();
+
+void loadStudentEmails();
+
 void addStudentRecord(
-  const StudentRecord& record
-);
+  const StudentRecord& record,
+  const StudentEmailRecord& email);
+
+bool removeStudentRecordsForFingerprintId(
+  uint16_t fingerprintId);
 
 int findAvailableFingerprintId();
 
 bool isStudentFieldValid(
   const String& value,
-  size_t maxLength
-);
+  size_t maxLength);
 
 String jsonEscape(
-  const String& value
-);
+  const String& value);
 
 void addEnrollmentRecord(
   uint16_t id,
   uint8_t action,
-  uint8_t result
-);
+  uint8_t result);
 
 bool isIdEnrolled(
-  uint16_t id
-);
+  uint16_t id);
 
 void markIdDeleted(
-  uint16_t id
-);
+  uint16_t id);
 
 String getTimestampString(
-  uint32_t timestamp
-);
+  uint32_t timestamp);
 
 String getCurrentTimestamp();
 
 void setupTime();
 
 uint8_t enrollFingerprint(
-  uint16_t id
-);
+  uint16_t id);
 
 const char* fingerErrorText(
-  int code
-);
+  int code);
 
 void processWebEnrollment();
 
 void handleStudentRegister();
+
+void handleClearDeviceData();
 
 void processStudentEnrollment();
 
 bool requirePortalAuthentication();
 
 int getFingerprintID(
-  int& status
-);
+  int& status);
 
-bool postBackendJson(
+int postBackendJson(
   const char* endpoint,
-  const String& payload
-);
+  const String& payload,
+  String& responseBody);
 
 bool sendStudentToBackend(
-  const StudentRecord& record
-);
+  const StudentRecord& record,
+  const StudentEmailRecord& email);
 
 bool sendAttendanceToBackend(
-  int id
-);
+  int id);
 
 String buildStudentJson(
-  const StudentRecord& record
-);
+  const StudentRecord& record,
+  const StudentEmailRecord& email);
+
+String studentEmailAddress(
+  const StudentEmailRecord& email);
 
 String buildAttendanceJson(
-  int id
-);
+  int id);
 
 
 // ============================================================
@@ -464,28 +504,43 @@ String buildAttendanceJson(
 
 void showMessage(
   const String& line1,
-  const String& line2
-) {
+  const String& line2) {
 
   lcd.clear();
 
   lcd.setCursor(
     0,
-    0
-  );
+    0);
 
   lcd.print(
-    line1
-  );
+    line1);
 
   lcd.setCursor(
     0,
-    1
-  );
+    1);
 
   lcd.print(
-    line2
-  );
+    line2);
+}
+
+
+void showTemporaryMessage(
+  const String& line1,
+  const String& line2,
+  unsigned long durationMs = 1500) {
+  showMessage(line1, line2);
+  restoreReadyMessageAtMs = millis() + durationMs;
+}
+
+
+void restoreReadyMessageIfDue() {
+  if (
+    restoreReadyMessageAtMs == 0 || static_cast<long>(millis() - restoreReadyMessageAtMs) < 0) {
+    return;
+  }
+
+  restoreReadyMessageAtMs = 0;
+  showMessage("Ready", "Scan Finger");
 }
 
 
@@ -496,33 +551,28 @@ void showMessage(
 void loadEnrollmentRecords() {
 
   EEPROM.begin(
-    EEPROM_SIZE
-  );
+    EEPROM_SIZE);
 
 
   uint32_t magic = 0;
 
   EEPROM.get(
     EEPROM_MAGIC_ADDR,
-    magic
-  );
+    magic);
 
 
   if (
-    magic != EEPROM_MAGIC
-  ) {
+    magic != EEPROM_MAGIC) {
 
     enrollmentRecordCount = 0;
 
     EEPROM.put(
       EEPROM_MAGIC_ADDR,
-      EEPROM_MAGIC
-    );
+      EEPROM_MAGIC);
 
     EEPROM.put(
       EEPROM_COUNT_ADDR,
-      enrollmentRecordCount
-    );
+      enrollmentRecordCount);
 
     EEPROM.commit();
 
@@ -531,14 +581,11 @@ void loadEnrollmentRecords() {
 
   EEPROM.get(
     EEPROM_COUNT_ADDR,
-    enrollmentRecordCount
-  );
+    enrollmentRecordCount);
 
 
   if (
-    enrollmentRecordCount >
-    MAX_ENROLL_RECORDS
-  ) {
+    enrollmentRecordCount > MAX_ENROLL_RECORDS) {
 
     enrollmentRecordCount = 0;
   }
@@ -547,27 +594,19 @@ void loadEnrollmentRecords() {
   for (
     uint16_t i = 0;
     i < enrollmentRecordCount;
-    i++
-  ) {
+    i++) {
 
     EEPROM.get(
-      EEPROM_RECORD_ADDR +
-      (
-        i *
-        sizeof(EnrollmentRecord)
-      ),
-      enrollmentRecords[i]
-    );
+      EEPROM_RECORD_ADDR + (i * sizeof(EnrollmentRecord)),
+      enrollmentRecords[i]);
   }
 
 
   Serial.print(
-    "Enrollment records loaded: "
-  );
+    "Enrollment records loaded: ");
 
   Serial.println(
-    enrollmentRecordCount
-  );
+    enrollmentRecordCount);
 }
 
 
@@ -579,30 +618,22 @@ void saveEnrollmentRecords() {
 
   EEPROM.put(
     EEPROM_MAGIC_ADDR,
-    EEPROM_MAGIC
-  );
+    EEPROM_MAGIC);
 
 
   EEPROM.put(
     EEPROM_COUNT_ADDR,
-    enrollmentRecordCount
-  );
+    enrollmentRecordCount);
 
 
   for (
     uint16_t i = 0;
     i < enrollmentRecordCount;
-    i++
-  ) {
+    i++) {
 
     EEPROM.put(
-      EEPROM_RECORD_ADDR +
-      (
-        i *
-        sizeof(EnrollmentRecord)
-      ),
-      enrollmentRecords[i]
-    );
+      EEPROM_RECORD_ADDR + (i * sizeof(EnrollmentRecord)),
+      enrollmentRecords[i]);
   }
 
 
@@ -620,8 +651,51 @@ void loadStudentRecords() {
 
   EEPROM.get(
     STUDENT_EEPROM_MAGIC_ADDR,
-    magic
-  );
+    magic);
+
+  if (magic == PREVIOUS_STUDENT_EEPROM_MAGIC) {
+    uint16_t previousCount = 0;
+    EEPROM.get(STUDENT_EEPROM_COUNT_ADDR, previousCount);
+    if (previousCount > 17) {
+      previousCount = 0;
+    }
+
+    studentRecordCount = previousCount;
+    memset(studentEmails, 0, sizeof(studentEmails));
+    for (uint16_t i = 0; i < studentRecordCount; i++) {
+      PreviousStudentRecord previousRecord;
+      EEPROM.get(
+        STUDENT_EEPROM_RECORD_ADDR + i * sizeof(PreviousStudentRecord),
+        previousRecord);
+
+      StudentRecord& record = studentRecords[i];
+      memset(&record, 0, sizeof(record));
+      record.fingerprintId = previousRecord.fingerprintId;
+      record.timestamp = previousRecord.timestamp;
+      record.subjectMask = previousRecord.subjectMask;
+      strncpy(record.studentId, previousRecord.studentId, sizeof(record.studentId) - 1);
+      strncpy(record.firstName, previousRecord.firstName, sizeof(record.firstName) - 1);
+      strncpy(record.lastName, previousRecord.lastName, sizeof(record.lastName) - 1);
+
+      String previousEmail = previousRecord.email;
+      previousEmail.toLowerCase();
+      const int atPosition = previousEmail.indexOf('@');
+      if (atPosition > 0) {
+        previousEmail.substring(0, atPosition).toCharArray(studentEmails[i].localPart, sizeof(studentEmails[i].localPart));
+        if (previousEmail.endsWith("@phinmaed.com")) {
+          studentEmails[i].domain = 1;
+        } else if (previousEmail.endsWith("@phinmaed.edu.ph")) {
+          studentEmails[i].domain = 2;
+        } else {
+          memset(&studentEmails[i], 0, sizeof(StudentEmailRecord));
+        }
+      }
+    }
+
+    saveStudentRecords();
+    saveStudentEmails();
+    return;
+  }
 
   if (magic != STUDENT_EEPROM_MAGIC) {
 
@@ -629,13 +703,11 @@ void loadStudentRecords() {
 
     EEPROM.put(
       STUDENT_EEPROM_MAGIC_ADDR,
-      STUDENT_EEPROM_MAGIC
-    );
+      STUDENT_EEPROM_MAGIC);
 
     EEPROM.put(
       STUDENT_EEPROM_COUNT_ADDR,
-      studentRecordCount
-    );
+      studentRecordCount);
 
     EEPROM.commit();
 
@@ -644,8 +716,7 @@ void loadStudentRecords() {
 
   EEPROM.get(
     STUDENT_EEPROM_COUNT_ADDR,
-    studentRecordCount
-  );
+    studentRecordCount);
 
   if (studentRecordCount > MAX_STUDENT_RECORDS) {
     studentRecordCount = 0;
@@ -653,10 +724,8 @@ void loadStudentRecords() {
 
   for (uint16_t i = 0; i < studentRecordCount; i++) {
     EEPROM.get(
-      STUDENT_EEPROM_RECORD_ADDR +
-      (i * sizeof(StudentRecord)),
-      studentRecords[i]
-    );
+      STUDENT_EEPROM_RECORD_ADDR + (i * sizeof(StudentRecord)),
+      studentRecords[i]);
   }
 }
 
@@ -665,20 +734,49 @@ void saveStudentRecords() {
 
   EEPROM.put(
     STUDENT_EEPROM_MAGIC_ADDR,
-    STUDENT_EEPROM_MAGIC
-  );
+    STUDENT_EEPROM_MAGIC);
 
   EEPROM.put(
     STUDENT_EEPROM_COUNT_ADDR,
-    studentRecordCount
-  );
+    studentRecordCount);
 
   for (uint16_t i = 0; i < studentRecordCount; i++) {
     EEPROM.put(
-      STUDENT_EEPROM_RECORD_ADDR +
-      (i * sizeof(StudentRecord)),
-      studentRecords[i]
-    );
+      STUDENT_EEPROM_RECORD_ADDR + (i * sizeof(StudentRecord)),
+      studentRecords[i]);
+  }
+
+  EEPROM.commit();
+}
+
+void loadStudentEmails() {
+  memset(studentEmails, 0, sizeof(studentEmails));
+
+  uint32_t magic = 0;
+  EEPROM.get(STUDENT_EMAIL_EEPROM_MAGIC_ADDR, magic);
+  if (magic != STUDENT_EMAIL_EEPROM_MAGIC) {
+    saveStudentEmails();
+    return;
+  }
+
+  for (uint16_t i = 0; i < studentRecordCount; i++) {
+    EEPROM.get(
+      STUDENT_EMAIL_EEPROM_RECORD_ADDR + i * sizeof(StudentEmailRecord),
+      studentEmails[i]);
+
+    if (studentEmails[i].domain > 2) {
+      memset(&studentEmails[i], 0, sizeof(StudentEmailRecord));
+    }
+  }
+}
+
+void saveStudentEmails() {
+  EEPROM.put(STUDENT_EMAIL_EEPROM_MAGIC_ADDR, STUDENT_EMAIL_EEPROM_MAGIC);
+
+  for (uint16_t i = 0; i < studentRecordCount; i++) {
+    EEPROM.put(
+      STUDENT_EMAIL_EEPROM_RECORD_ADDR + i * sizeof(StudentEmailRecord),
+      studentEmails[i]);
   }
 
   EEPROM.commit();
@@ -686,20 +784,53 @@ void saveStudentRecords() {
 
 
 void addStudentRecord(
-  const StudentRecord& record
-) {
+  const StudentRecord& record,
+  const StudentEmailRecord& email) {
 
   if (studentRecordCount >= MAX_STUDENT_RECORDS) {
     for (uint16_t i = 1; i < MAX_STUDENT_RECORDS; i++) {
       studentRecords[i - 1] = studentRecords[i];
+      studentEmails[i - 1] = studentEmails[i];
     }
 
     studentRecordCount = MAX_STUDENT_RECORDS - 1;
   }
 
   studentRecords[studentRecordCount] = record;
+  studentEmails[studentRecordCount] = email;
   studentRecordCount++;
   saveStudentRecords();
+  saveStudentEmails();
+}
+
+bool removeStudentRecordsForFingerprintId(
+  uint16_t fingerprintId) {
+  bool removed = false;
+
+  for (uint16_t i = 0; i < studentRecordCount;) {
+    if (studentRecords[i].fingerprintId != fingerprintId) {
+      i++;
+      continue;
+    }
+
+    for (uint16_t j = i + 1; j < studentRecordCount; j++) {
+      studentRecords[j - 1] = studentRecords[j];
+      studentEmails[j - 1] = studentEmails[j];
+    }
+
+    studentRecordCount--;
+    memset(&studentRecords[studentRecordCount], 0, sizeof(StudentRecord));
+    memset(&studentEmails[studentRecordCount], 0, sizeof(StudentEmailRecord));
+    removed = true;
+  }
+
+  if (removed) {
+    nextStudentToSync = 0;
+    saveStudentRecords();
+    saveStudentEmails();
+  }
+
+  return removed;
 }
 
 
@@ -717,8 +848,7 @@ int findAvailableFingerprintId() {
 
 bool isStudentFieldValid(
   const String& value,
-  size_t maxLength
-) {
+  size_t maxLength) {
 
   if (value.length() == 0 || value.length() > maxLength) {
     return false;
@@ -737,8 +867,7 @@ bool isStudentFieldValid(
 
 
 String jsonEscape(
-  const String& value
-) {
+  const String& value) {
 
   String escaped = value;
   escaped.replace("\\", "\\\\");
@@ -754,8 +883,7 @@ String jsonEscape(
 // ============================================================
 
 bool isIdEnrolled(
-  uint16_t id
-) {
+  uint16_t id) {
 
   /*
     Search from newest record backwards.
@@ -768,31 +896,20 @@ bool isIdEnrolled(
     int i =
       enrollmentRecordCount - 1;
     i >= 0;
-    i--
-  ) {
+    i--) {
 
     if (
-      enrollmentRecords[i].id ==
-      id
-    ) {
+      enrollmentRecords[i].id == id) {
 
       if (
-        enrollmentRecords[i].action ==
-        ACTION_ENROLL &&
-        enrollmentRecords[i].result ==
-        1
-      ) {
+        enrollmentRecords[i].action == ACTION_ENROLL && enrollmentRecords[i].result == 1) {
 
         return true;
       }
 
 
       if (
-        enrollmentRecords[i].action ==
-        ACTION_DELETE &&
-        enrollmentRecords[i].result ==
-        1
-      ) {
+        enrollmentRecords[i].action == ACTION_DELETE && enrollmentRecords[i].result == 1) {
 
         return false;
       }
@@ -811,8 +928,7 @@ bool isIdEnrolled(
 void addEnrollmentRecord(
   uint16_t id,
   uint8_t action,
-  uint8_t result
-) {
+  uint8_t result) {
 
   EnrollmentRecord record;
 
@@ -841,15 +957,12 @@ void addEnrollmentRecord(
   */
 
   if (
-    enrollmentRecordCount >=
-    MAX_ENROLL_RECORDS
-  ) {
+    enrollmentRecordCount >= MAX_ENROLL_RECORDS) {
 
     for (
       uint16_t i = 1;
       i < MAX_ENROLL_RECORDS;
-      i++
-    ) {
+      i++) {
 
       enrollmentRecords[i - 1] =
         enrollmentRecords[i];
@@ -861,9 +974,7 @@ void addEnrollmentRecord(
   }
 
 
-  enrollmentRecords[
-    enrollmentRecordCount
-  ] =
+  enrollmentRecords[enrollmentRecordCount] =
     record;
 
 
@@ -874,8 +985,7 @@ void addEnrollmentRecord(
 
 
   Serial.println(
-    "Enrollment log saved."
-  );
+    "Enrollment log saved.");
 }
 
 
@@ -884,14 +994,12 @@ void addEnrollmentRecord(
 // ============================================================
 
 void markIdDeleted(
-  uint16_t id
-) {
+  uint16_t id) {
 
   addEnrollmentRecord(
     id,
     ACTION_DELETE,
-    1
-  );
+    1);
 }
 
 
@@ -900,12 +1008,10 @@ void markIdDeleted(
 // ============================================================
 
 String getTimestampString(
-  uint32_t timestamp
-) {
+  uint32_t timestamp) {
 
   if (
-    timestamp == 0
-  ) {
+    timestamp == 0) {
 
     return "Time unavailable";
   }
@@ -917,13 +1023,11 @@ String getTimestampString(
 
   struct tm* timeInfo =
     localtime(
-      &rawTime
-    );
+      &rawTime);
 
 
   if (
-    timeInfo == nullptr
-  ) {
+    timeInfo == nullptr) {
 
     return "Time unavailable";
   }
@@ -947,13 +1051,11 @@ String getTimestampString(
 
     timeInfo->tm_min,
 
-    timeInfo->tm_sec
-  );
+    timeInfo->tm_sec);
 
 
   return String(
-    buffer
-  );
+    buffer);
 }
 
 
@@ -964,8 +1066,7 @@ String getTimestampString(
 String getCurrentTimestamp() {
 
   return getTimestampString(
-    time(nullptr)
-  );
+    time(nullptr));
 }
 
 
@@ -987,13 +1088,11 @@ void setupTime() {
     0,
     "pool.ntp.org",
     "time.nist.gov",
-    "time.google.com"
-  );
+    "time.google.com");
 
 
   Serial.println(
-    "Synchronizing time..."
-  );
+    "Synchronizing time...");
 
 
   unsigned long start =
@@ -1005,9 +1104,7 @@ void setupTime() {
 
 
   while (
-    now < 1700000000 &&
-    millis() - start < 15000
-  ) {
+    now < 1700000000 && millis() - start < 15000) {
 
     servicePortal();
 
@@ -1019,23 +1116,19 @@ void setupTime() {
 
 
   if (
-    now >= 1700000000
-  ) {
+    now >= 1700000000) {
 
     Serial.print(
-      "Time synchronized: "
-    );
+      "Time synchronized: ");
 
     Serial.println(
-      getCurrentTimestamp()
-    );
+      getCurrentTimestamp());
   }
 
   else {
 
     Serial.println(
-      "NTP time unavailable."
-    );
+      "NTP time unavailable.");
   }
 }
 
@@ -1045,48 +1138,41 @@ void setupTime() {
 // ============================================================
 
 bool initFingerprintSensor(
-  bool showUi
-) {
+  bool showUi) {
 
   for (
     size_t i = 0;
     i < SENSOR_BAUDS_COUNT;
-    i++
-  ) {
+    i++) {
 
     uint32_t baud =
       SENSOR_BAUDS[i];
 
 
     fingerSerial.begin(
-      baud
-    );
+      baud);
 
 
     finger.begin(
-      baud
-    );
+      baud);
 
 
     fingerSerial.listen();
 
 
     if (
-      finger.verifyPassword()
-    ) {
+      finger.verifyPassword()) {
 
       activeSensorBaud =
         baud;
 
 
       if (
-        showUi
-      ) {
+        showUi) {
 
         showMessage(
           "Sensor OK",
-          String(baud)
-        );
+          String(baud));
 
 
         delay(600);
@@ -1094,12 +1180,10 @@ bool initFingerprintSensor(
 
 
       Serial.print(
-        "Fingerprint baud: "
-      );
+        "Fingerprint baud: ");
 
       Serial.println(
-        baud
-      );
+        baud);
 
 
       return true;
@@ -1118,16 +1202,13 @@ bool initFingerprintSensor(
 void reinitFingerprintSensor() {
 
   if (
-    activeSensorBaud > 0
-  ) {
+    activeSensorBaud > 0) {
 
     fingerSerial.begin(
-      activeSensorBaud
-    );
+      activeSensorBaud);
 
     finger.begin(
-      activeSensorBaud
-    );
+      activeSensorBaud);
 
     fingerSerial.listen();
   }
@@ -1135,8 +1216,7 @@ void reinitFingerprintSensor() {
   else {
 
     initFingerprintSensor(
-      false
-    );
+      false);
   }
 }
 
@@ -1145,80 +1225,103 @@ void reinitFingerprintSensor() {
 // WIFI
 // ============================================================
 
+bool getCommaSeparatedValue(
+  const char* list,
+  uint8_t index,
+  String& value) {
+  const String source = String(list == nullptr ? "" : list);
+  int start = 0;
+
+  for (uint8_t currentIndex = 0; currentIndex < index; currentIndex++) {
+    const int commaPosition = source.indexOf(',', start);
+    if (commaPosition < 0) {
+      return false;
+    }
+
+    start = commaPosition + 1;
+  }
+
+  int end = source.indexOf(',', start);
+  if (end < 0) {
+    end = source.length();
+  }
+
+  value = source.substring(start, end);
+  value.trim();
+  return true;
+}
+
+
 bool connectWiFi(
-  bool showUi
-) {
+  bool showUi) {
 
   if (
-    WiFi.status() ==
-    WL_CONNECTED
-  ) {
+    WiFi.status() == WL_CONNECTED) {
 
     return true;
   }
 
 
   WiFi.mode(
-    WIFI_AP_STA
-  );
+    WIFI_AP_STA);
 
+  for (uint8_t networkIndex = 0;; networkIndex++) {
+    String ssid;
+    String password;
+    if (!getCommaSeparatedValue(WIFI_NAMES, networkIndex, ssid)) {
+      break;
+    }
 
-  WiFi.begin(
-    WIFI_NAME,
-    WIFI_PASSWORD
-  );
+    if (!getCommaSeparatedValue(WIFI_PASSWORDS, networkIndex, password)) {
+      Serial.println("WiFi configuration error: each SSID needs a matching password entry.");
+      break;
+    }
 
+    if (ssid.length() == 0) {
+      continue;
+    }
 
-  if (
-    showUi
-  ) {
+    Serial.print("Trying WiFi network ");
+    Serial.print(networkIndex + 1);
+    Serial.print(": ");
+    Serial.println(ssid);
 
-    showMessage(
-      "WiFi",
-      "Connecting..."
-    );
-  }
+    if (showUi) {
+      showMessage(
+        String("WiFi ") + String(networkIndex + 1),
+        ssid.substring(0, 16));
+    }
 
-
-  unsigned long start =
-    millis();
-
-
-  while (
-    WiFi.status() != WL_CONNECTED &&
-    millis() - start < 20000
-  ) {
-
-    servicePortal();
-
-    handleResetButton();
-
+    WiFi.disconnect(false);
     delay(100);
-  }
+    WiFi.begin(ssid.c_str(), password.c_str());
 
+    const unsigned long attemptStartedAt = millis();
+    while (
+      WiFi.status() != WL_CONNECTED && millis() - attemptStartedAt < WIFI_CONNECT_TIMEOUT_MS) {
+      servicePortal();
+      handleResetButton();
+      delay(100);
+    }
 
-  if (
-    WiFi.status() ==
-    WL_CONNECTED
-  ) {
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Connection failed; trying the next configured network.");
+      continue;
+    }
 
     Serial.print(
-      "STA IP: "
-    );
+      "STA IP: ");
 
     Serial.println(
-      WiFi.localIP()
-    );
+      WiFi.localIP());
 
 
     if (
-      showUi
-    ) {
+      showUi) {
 
       showMessage(
         "WiFi",
-        "Connected"
-      );
+        "Connected");
 
       delay(700);
     }
@@ -1227,10 +1330,9 @@ bool connectWiFi(
     return true;
   }
 
-
+  lastWiFiAttemptMs = millis();
   Serial.println(
-    "WiFi connection failed."
-  );
+    "All configured WiFi networks failed.");
 
 
   return false;
@@ -2028,13 +2130,13 @@ th {
 
   <div class="card">
     <h3>Register Student</h3>
-    <p class="registration-intro">Complete the details below, then ask the student to scan the same finger twice.</p>
+    <p class="registration-intro">Enter the student details and PHINMAED email, then ask them to scan the same finger twice. Attendance confirmations will be sent to this email.</p>
 
     <input id="studentFirstName" maxlength="20" placeholder="First name">
     <input id="studentLastName" maxlength="20" placeholder="Last name">
     <input id="studentId" maxlength="16" placeholder="03-XXXX-XXXXX">
-
-    <div class="selection-hint">Email, block, and subjects are completed later in Laravel.</div>
+    <input id="studentEmail" type="email" maxlength="48" placeholder="student@phinmaed.com" autocomplete="email" required>
+    <div class="selection-hint">Use the student's @phinmaed.com or @phinmaed.edu.ph address. Block and subjects are managed in Laravel.</div>
 
     <button id="studentRegisterButton" class="action student-save" onclick="registerStudent()">Register student and fingerprint</button>
     <div id="studentOperationStatus" class="status">Ready.</div>
@@ -2095,6 +2197,19 @@ th {
     >
       Delete Fingerprint
     </button>
+
+    <button
+      id="clearDeviceDataButton"
+      class="action delete"
+      onclick="clearDeviceData()"
+    >
+      Clear All Device Data
+    </button>
+
+    <p class="selection-hint">
+      Removes all fingerprint templates, saved students, and device enrollment logs.
+      Backend database records are not changed.
+    </p>
 
 
     <div
@@ -2460,6 +2575,40 @@ function loadFingerprints() {
         html;
     }
   );
+}
+
+
+function clearDeviceData() {
+  if (!confirm(
+    "PERMANENTLY erase every fingerprint template, saved student, and enrollment log from this ESP8266? Backend database records will not be changed."
+  )) {
+    return;
+  }
+
+  const button = document.getElementById("clearDeviceDataButton");
+  button.disabled = true;
+  document.getElementById("operationStatus").innerText =
+    "Erasing sensor and local device data...";
+
+  fetch("/api/clear-device-data", { method: "POST" })
+  .then(async response => {
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Could not clear device data.");
+    }
+    document.getElementById("operationStatus").innerText = data.message;
+    loadStudents();
+    loadFingerprints();
+    loadLogs();
+    loadDashboard();
+  })
+  .catch(error => {
+    document.getElementById("operationStatus").innerText =
+      error instanceof Error ? error.message : "Could not clear device data.";
+  })
+  .finally(() => {
+    button.disabled = false;
+  });
 }
 
 
@@ -2829,11 +2978,11 @@ function loadStudents() {
       return;
     }
 
-    let html = "<table><tr><th>Name</th><th>Student ID</th><th>Section</th><th>Subjects</th><th>Fingerprint ID</th><th>Saved At</th></tr>";
+    let html = "<table><tr><th>Name</th><th>Student ID</th><th>PHINMAED Email</th><th>Subjects</th><th>Fingerprint ID</th><th>Saved At</th></tr>";
 
     data.items.slice().reverse().forEach(item => {
       html += "<tr><td><strong>" + item.first_name + " " + item.last_name +
-        "</strong></td><td>" + item.student_id + "</td><td>" + item.section +
+        "</strong></td><td>" + item.student_id + "</td><td>" + item.email +
         "</td><td>" + item.subjects + "</td><td>" + item.id +
         "</td><td>" + item.timestamp + "</td></tr>";
     });
@@ -2851,9 +3000,25 @@ function registerStudent() {
   const firstName = document.getElementById("studentFirstName").value.trim();
   const lastName = document.getElementById("studentLastName").value.trim();
   const studentId = document.getElementById("studentId").value.trim();
-  if (!firstName || !lastName || !studentId) {
-  document.getElementById("studentOperationStatus").innerText =
-    "Enter the student's first name, last name, and student ID.";
+  const email = document.getElementById("studentEmail").value.trim().toLowerCase();
+  const isPhinmaedEmail =
+    email.length <= 48 &&
+    /^[^@\s]+@phinmaed\.(com|edu\.ph)$/i.test(email);
+  if (!firstName || firstName.length > 20 || !lastName || lastName.length > 20) {
+    document.getElementById("studentOperationStatus").innerText =
+      "Enter the student's first and last name (maximum 20 characters each).";
+    return;
+  }
+
+  if (!studentId || studentId.length > 16) {
+    document.getElementById("studentOperationStatus").innerText =
+      "Enter a student ID with no more than 16 characters.";
+    return;
+  }
+
+  if (!isPhinmaedEmail) {
+    document.getElementById("studentOperationStatus").innerText =
+      "Enter only the email address, such as dito.doctor.up@phinmaed.com.";
     return;
   }
 
@@ -2863,12 +3028,20 @@ function registerStudent() {
 
   fetch("/api/register-student?first_name=" + encodeURIComponent(firstName) +
     "&last_name=" + encodeURIComponent(lastName) +
-    "&student_id=" + encodeURIComponent(studentId))
+    "&student_id=" + encodeURIComponent(studentId) +
+    "&email=" + encodeURIComponent(email))
   .then(response => response.json())
   .then(data => {
     document.getElementById("studentOperationStatus").innerText = data.message;
 
-    if (data.success) {
+    if (data.updated) {
+      document.getElementById("studentRegisterButton").disabled = false;
+      document.getElementById("studentFirstName").value = "";
+      document.getElementById("studentLastName").value = "";
+      document.getElementById("studentId").value = "";
+      document.getElementById("studentEmail").value = "";
+      loadStudents();
+    } else if (data.success) {
       pollStudentOperation();
     } else {
       document.getElementById("studentRegisterButton").disabled = false;
@@ -2906,6 +3079,7 @@ function pollStudentOperation() {
           document.getElementById("studentFirstName").value = "";
           document.getElementById("studentLastName").value = "";
           document.getElementById("studentId").value = "";
+          document.getElementById("studentEmail").value = "";
         }
       }
     });
@@ -3049,16 +3223,14 @@ void handlePortalRoot() {
     server.send(
       200,
       "text/html",
-      LOGIN_HTML
-    );
+      LOGIN_HTML);
     return;
   }
 
   server.send(
     200,
     "text/html",
-    PORTAL_HTML
-  );
+    PORTAL_HTML);
 }
 
 
@@ -3071,8 +3243,7 @@ bool requirePortalAuthentication() {
   server.send(
     401,
     "application/json",
-    "{\"success\":false,\"message\":\"Program Head login required.\"}"
-  );
+    "{\"success\":false,\"message\":\"Program Head login required.\"}");
 
   return false;
 }
@@ -3081,35 +3252,28 @@ bool requirePortalAuthentication() {
 void handlePortalLogin() {
 
   if (
-    !server.hasArg("username") ||
-    !server.hasArg("password")
-  ) {
+    !server.hasArg("username") || !server.hasArg("password")) {
     server.send(
       400,
       "application/json",
-      "{\"success\":false,\"message\":\"Username and password are required.\"}"
-    );
+      "{\"success\":false,\"message\":\"Username and password are required.\"}");
     return;
   }
 
   if (
-    server.arg("username") == PH_USERNAME &&
-    server.arg("password") == PH_PASSWORD
-  ) {
+    server.arg("username") == PH_USERNAME && server.arg("password") == PH_PASSWORD) {
     portalAuthenticated = true;
     server.send(
       200,
       "application/json",
-      "{\"success\":true,\"message\":\"Login successful.\"}"
-    );
+      "{\"success\":true,\"message\":\"Login successful.\"}");
     return;
   }
 
   server.send(
     401,
     "application/json",
-    "{\"success\":false,\"message\":\"Invalid Program Head credentials.\"}"
-  );
+    "{\"success\":false,\"message\":\"Invalid Program Head credentials.\"}");
 }
 
 
@@ -3118,8 +3282,7 @@ void handlePortalLogout() {
   server.send(
     200,
     "application/json",
-    "{\"success\":true,\"message\":\"Logged out.\"}"
-  );
+    "{\"success\":true,\"message\":\"Logged out.\"}");
 }
 
 
@@ -3132,15 +3295,13 @@ void handleGenerate204() {
   server.sendHeader(
     "Location",
     "http://192.168.4.1/",
-    true
-  );
+    true);
 
 
   server.send(
     302,
     "text/plain",
-    ""
-  );
+    "");
 }
 
 
@@ -3155,15 +3316,13 @@ void handleFwlink() {
   server.sendHeader(
     "Location",
     "http://192.168.4.1/",
-    true
-  );
+    true);
 
 
   server.send(
     302,
     "text/plain",
-    ""
-  );
+    "");
 }
 
 
@@ -3178,8 +3337,7 @@ bool checkBackendConnection(
   bool& httpReachable,
   int& httpStatusCode,
   bool& databaseReachable,
-  int& databaseStatusCode
-) {
+  int& databaseStatusCode) {
   backendHost = "";
   backendPort = 0;
   tcpReachable = false;
@@ -3189,10 +3347,7 @@ bool checkBackendConnection(
   databaseStatusCode = 0;
 
   if (
-    BASE_URL == nullptr ||
-    strlen(BASE_URL) == 0 ||
-    WiFi.status() != WL_CONNECTED
-  ) {
+    BASE_URL == nullptr || strlen(BASE_URL) == 0 || WiFi.status() != WL_CONNECTED) {
     return false;
   }
 
@@ -3201,25 +3356,21 @@ bool checkBackendConnection(
   int hostStart = schemeEnd >= 0 ? schemeEnd + 3 : 0;
   int pathStart = backendUrl.indexOf('/', hostStart);
   String authority = pathStart >= 0
-    ? backendUrl.substring(hostStart, pathStart)
-    : backendUrl.substring(hostStart);
+                       ? backendUrl.substring(hostStart, pathStart)
+                       : backendUrl.substring(hostStart);
 
   int portSeparator = authority.lastIndexOf(':');
   if (portSeparator > 0) {
     backendHost = authority.substring(0, portSeparator);
     backendPort = static_cast<uint16_t>(
-      authority.substring(portSeparator + 1).toInt()
-    );
-  }
-  else {
+      authority.substring(portSeparator + 1).toInt());
+  } else {
     backendHost = authority;
     backendPort = backendUrl.startsWith("https://") ? 443 : 80;
   }
 
   if (
-    backendHost.length() == 0 ||
-    backendPort == 0
-  ) {
+    backendHost.length() == 0 || backendPort == 0) {
     return false;
   }
 
@@ -3227,8 +3378,7 @@ bool checkBackendConnection(
   tcpClient.setTimeout(3000);
   tcpReachable = tcpClient.connect(
     backendHost.c_str(),
-    backendPort
-  );
+    backendPort);
   tcpClient.stop();
 
   HTTPClient http;
@@ -3238,23 +3388,19 @@ bool checkBackendConnection(
   if (backendUrl.startsWith("https://")) {
     backendHttpsClient.setInsecure();
     initialized = http.begin(backendHttpsClient, backendUrl);
-  }
-  else {
+  } else {
     initialized = http.begin(backendHttpClient, backendUrl);
   }
 
   if (initialized) {
     httpStatusCode = http.GET();
     httpReachable =
-      httpStatusCode >= 200 &&
-      httpStatusCode < 400;
+      httpStatusCode >= 200 && httpStatusCode < 400;
     http.end();
   }
 
   if (
-    BACKEND_HEALTH_URL != nullptr &&
-    strlen(BACKEND_HEALTH_URL) > 0
-  ) {
+    BACKEND_HEALTH_URL != nullptr && strlen(BACKEND_HEALTH_URL) > 0) {
     HTTPClient healthHttp;
     healthHttp.setTimeout(3000);
 
@@ -3263,41 +3409,32 @@ bool checkBackendConnection(
       backendHttpsClient.setInsecure();
       healthInitialized = healthHttp.begin(
         backendHttpsClient,
-        BACKEND_HEALTH_URL
-      );
-    }
-    else {
+        BACKEND_HEALTH_URL);
+    } else {
       healthInitialized = healthHttp.begin(
         backendHttpClient,
-        BACKEND_HEALTH_URL
-      );
+        BACKEND_HEALTH_URL);
     }
 
     if (healthInitialized) {
       healthHttp.addHeader("Accept", "application/json");
 
       if (
-        BACKEND_API_KEY != nullptr &&
-        strlen(BACKEND_API_KEY) > 0
-      ) {
+        BACKEND_API_KEY != nullptr && strlen(BACKEND_API_KEY) > 0) {
         if (BACKEND_USE_BEARER_TOKEN) {
           healthHttp.addHeader(
             "Authorization",
-            String("Bearer ") + BACKEND_API_KEY
-          );
-        }
-        else {
+            String("Bearer ") + BACKEND_API_KEY);
+        } else {
           healthHttp.addHeader(
             BACKEND_API_KEY_HEADER,
-            BACKEND_API_KEY
-          );
+            BACKEND_API_KEY);
         }
       }
 
       databaseStatusCode = healthHttp.GET();
       databaseReachable =
-        databaseStatusCode >= 200 &&
-        databaseStatusCode < 300;
+        databaseStatusCode >= 200 && databaseStatusCode < 300;
       healthHttp.end();
     }
   }
@@ -3327,8 +3464,7 @@ void handleDashboard() {
     backendHttpReachable,
     backendHttpStatusCode,
     backendDatabaseReachable,
-    backendDatabaseStatusCode
-  );
+    backendDatabaseStatusCode);
 
   int enrolledCount = 0;
 
@@ -3340,12 +3476,10 @@ void handleDashboard() {
   for (
     uint16_t id = 1;
     id <= 1000;
-    id++
-  ) {
+    id++) {
 
     if (
-      isIdEnrolled(id)
-    ) {
+      isIdEnrolled(id)) {
 
       enrolledCount++;
     }
@@ -3357,13 +3491,11 @@ void handleDashboard() {
 
 
   json +=
-    "\"enrolled\":" +
-    String(enrolledCount);
+    "\"enrolled\":" + String(enrolledCount);
 
 
   json +=
-    ",\"logs\":" +
-    String(enrollmentRecordCount);
+    ",\"logs\":" + String(enrollmentRecordCount);
 
 
   json +=
@@ -3371,22 +3503,17 @@ void handleDashboard() {
 
 
   json +=
-    WiFi.status() ==
-    WL_CONNECTED
-    ? "true"
-    : "false";
+    WiFi.status() == WL_CONNECTED
+      ? "true"
+      : "false";
 
 
   json +=
-    ",\"portal_ip\":\"" +
-    WiFi.softAPIP().toString() +
-    "\"";
+    ",\"portal_ip\":\"" + WiFi.softAPIP().toString() + "\"";
 
 
   json +=
-    ",\"router_ip\":\"" +
-    WiFi.localIP().toString() +
-    "\"";
+    ",\"router_ip\":\"" + WiFi.localIP().toString() + "\"";
 
 
   json +=
@@ -3395,48 +3522,36 @@ void handleDashboard() {
 
   json +=
     activeSensorBaud > 0
-    ? "true"
-    : "false";
+      ? "true"
+      : "false";
 
 
   json +=
-    ",\"time\":\"" +
-    getCurrentTimestamp() +
-    "\"";
+    ",\"time\":\"" + getCurrentTimestamp() + "\"";
 
   json +=
-    ",\"backend_url\":\"" +
-    String(BASE_URL == nullptr ? "" : BASE_URL) +
-    "\"";
+    ",\"backend_url\":\"" + String(BASE_URL == nullptr ? "" : BASE_URL) + "\"";
 
   json +=
-    ",\"backend_host\":\"" +
-    backendHost +
-    "\"";
+    ",\"backend_host\":\"" + backendHost + "\"";
 
   json +=
-    ",\"backend_port\":" +
-    String(backendPort);
+    ",\"backend_port\":" + String(backendPort);
 
   json +=
-    ",\"backend_tcp\":" +
-    String(backendTcpReachable ? "true" : "false");
+    ",\"backend_tcp\":" + String(backendTcpReachable ? "true" : "false");
 
   json +=
-    ",\"backend_http\":" +
-    String(backendHttpReachable ? "true" : "false");
+    ",\"backend_http\":" + String(backendHttpReachable ? "true" : "false");
 
   json +=
-    ",\"backend_http_code\":" +
-    String(backendHttpStatusCode);
+    ",\"backend_http_code\":" + String(backendHttpStatusCode);
 
   json +=
-    ",\"backend_database\":" +
-    String(backendDatabaseReachable ? "true" : "false");
+    ",\"backend_database\":" + String(backendDatabaseReachable ? "true" : "false");
 
   json +=
-    ",\"backend_database_code\":" +
-    String(backendDatabaseStatusCode);
+    ",\"backend_database_code\":" + String(backendDatabaseStatusCode);
 
 
   json +=
@@ -3446,8 +3561,7 @@ void handleDashboard() {
   server.send(
     200,
     "application/json",
-    json
-  );
+    json);
 }
 
 
@@ -3477,12 +3591,10 @@ void handleEnrolledIDs() {
   for (
     uint16_t id = 1;
     id <= 1000;
-    id++
-  ) {
+    id++) {
 
     if (
-      !isIdEnrolled(id)
-    ) {
+      !isIdEnrolled(id)) {
 
       continue;
     }
@@ -3501,17 +3613,10 @@ void handleEnrolledIDs() {
       int i =
         enrollmentRecordCount - 1;
       i >= 0;
-      i--
-    ) {
+      i--) {
 
       if (
-        enrollmentRecords[i].id ==
-        id &&
-        enrollmentRecords[i].action ==
-        ACTION_ENROLL &&
-        enrollmentRecords[i].result ==
-        1
-      ) {
+        enrollmentRecords[i].id == id && enrollmentRecords[i].action == ACTION_ENROLL && enrollmentRecords[i].result == 1) {
 
         latestIndex =
           i;
@@ -3522,8 +3627,7 @@ void handleEnrolledIDs() {
 
 
     if (
-      latestIndex < 0
-    ) {
+      latestIndex < 0) {
 
       continue;
     }
@@ -3541,8 +3645,7 @@ void handleEnrolledIDs() {
 
 
     json +=
-      "{\"id\":" +
-      String(id);
+      "{\"id\":" + String(id);
 
 
     json +=
@@ -3551,16 +3654,12 @@ void handleEnrolledIDs() {
 
     String timestamp =
       getTimestampString(
-        enrollmentRecords[
-          latestIndex
-        ].timestamp
-      );
+        enrollmentRecords[latestIndex].timestamp);
 
 
     timestamp.replace(
       "\"",
-      "\\\""
-    );
+      "\\\"");
 
 
     json +=
@@ -3579,8 +3678,7 @@ void handleEnrolledIDs() {
   server.send(
     200,
     "application/json",
-    json
-  );
+    json);
 }
 
 
@@ -3601,12 +3699,10 @@ void handleLogs() {
   for (
     uint16_t i = 0;
     i < enrollmentRecordCount;
-    i++
-  ) {
+    i++) {
 
     if (
-      i > 0
-    ) {
+      i > 0) {
 
       json +=
         ",";
@@ -3618,8 +3714,7 @@ void handleLogs() {
 
 
     json +=
-      "{\"id\":" +
-      String(record.id);
+      "{\"id\":" + String(record.id);
 
 
     json +=
@@ -3627,9 +3722,7 @@ void handleLogs() {
 
 
     if (
-      record.action ==
-      ACTION_ENROLL
-    ) {
+      record.action == ACTION_ENROLL) {
 
       json +=
         "ENROLL";
@@ -3653,8 +3746,8 @@ void handleLogs() {
 
     json +=
       record.result
-      ? "true"
-      : "false";
+        ? "true"
+        : "false";
 
 
     json +=
@@ -3663,8 +3756,7 @@ void handleLogs() {
 
     json +=
       getTimestampString(
-        record.timestamp
-      );
+        record.timestamp);
 
 
     json +=
@@ -3679,8 +3771,7 @@ void handleLogs() {
   server.send(
     200,
     "application/json",
-    json
-  );
+    json);
 }
 
 
@@ -3689,8 +3780,7 @@ void handleLogs() {
 // ============================================================
 
 String subjectNames(
-  uint8_t mask
-) {
+  uint8_t mask) {
 
   String value;
 
@@ -3719,7 +3809,7 @@ void handleStudents() {
     json += ",\"first_name\":\"" + jsonEscape(record.firstName) + "\"";
     json += ",\"last_name\":\"" + jsonEscape(record.lastName) + "\"";
     json += ",\"student_id\":\"" + jsonEscape(record.studentId) + "\"";
-    json += ",\"section\":\"" + jsonEscape(record.section) + "\"";
+    json += ",\"email\":\"" + jsonEscape(studentEmailAddress(studentEmails[i])) + "\"";
     json += ",\"subjects\":\"" + jsonEscape(subjectNames(record.subjectMask)) + "\"";
     json += ",\"timestamp\":\"" + jsonEscape(getTimestampString(record.timestamp)) + "\"}";
   }
@@ -3739,8 +3829,7 @@ void handleStudentRegister() {
     server.send(
       409,
       "application/json",
-      "{\"success\":false,\"message\":\"Another fingerprint operation is running.\"}"
-    );
+      "{\"success\":false,\"message\":\"Another fingerprint operation is running.\"}");
     return;
   }
 
@@ -3748,38 +3837,93 @@ void handleStudentRegister() {
     server.send(
       500,
       "application/json",
-      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}"
-    );
+      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}");
     return;
   }
 
   if (!pendingStudentActive) {
     if (
-      !server.hasArg("first_name") ||
-      !server.hasArg("last_name") ||
-      !server.hasArg("student_id")
-    ) {
+      !server.hasArg("first_name") || !server.hasArg("last_name") || !server.hasArg("student_id") || !server.hasArg("email")) {
       server.send(
         400,
         "application/json",
-        "{\"success\":false,\"message\":\"Student name and student ID are required.\"}"
-      );
+        "{\"success\":false,\"message\":\"Student name, student ID, and PHINMAED email are required.\"}");
       return;
     }
 
     String firstName = server.arg("first_name");
     String lastName = server.arg("last_name");
     String studentId = server.arg("student_id");
-    if (
-      !isStudentFieldValid(firstName, 20) ||
-      !isStudentFieldValid(lastName, 20) ||
-      !isStudentFieldValid(studentId, 16)
-    ) {
+    String email = server.arg("email");
+    firstName.trim();
+    lastName.trim();
+    studentId.trim();
+    email.trim();
+    email.toLowerCase();
+    if (!isStudentFieldValid(firstName, 20) || !isStudentFieldValid(lastName, 20)) {
       server.send(
         400,
         "application/json",
-        "{\"success\":false,\"message\":\"Invalid student details.\"}"
-      );
+        "{\"success\":false,\"message\":\"Enter a valid first and last name (maximum 20 characters each).\"}");
+      return;
+    }
+
+    if (!isStudentFieldValid(studentId, 16)) {
+      server.send(
+        400,
+        "application/json",
+        "{\"success\":false,\"message\":\"Enter a valid student ID with no more than 16 characters.\"}");
+      return;
+    }
+
+    if (
+      !isStudentFieldValid(email, STUDENT_EMAIL_MAX_LENGTH) || email.indexOf('@') <= 0 || email.indexOf('@') != email.lastIndexOf('@') || (!email.endsWith("@phinmaed.com") && !email.endsWith("@phinmaed.edu.ph"))) {
+      server.send(
+        400,
+        "application/json",
+        "{\"success\":false,\"message\":\"Enter only a valid @phinmaed.com or @phinmaed.edu.ph email address.\"}");
+      return;
+    }
+
+    int matchingStudentIndex = -1;
+    for (uint16_t i = 0; i < studentRecordCount; i++) {
+      if (studentId != studentRecords[i].studentId) {
+        continue;
+      }
+
+      StudentRecord& record = studentRecords[i];
+      record.firstName[0] = '\0';
+      record.lastName[0] = '\0';
+      firstName.toCharArray(record.firstName, sizeof(record.firstName));
+      lastName.toCharArray(record.lastName, sizeof(record.lastName));
+      record.timestamp = time(nullptr);
+
+      memset(&studentEmails[i], 0, sizeof(StudentEmailRecord));
+      const int atPosition = email.indexOf('@');
+      email.substring(0, atPosition).toCharArray(studentEmails[i].localPart, sizeof(studentEmails[i].localPart));
+      studentEmails[i].domain = email.endsWith("@phinmaed.com") ? 1 : 2;
+
+      if (matchingStudentIndex < 0) {
+        matchingStudentIndex = i;
+      }
+    }
+
+    if (matchingStudentIndex >= 0) {
+      saveStudentRecords();
+      saveStudentEmails();
+
+      const uint16_t existingIndex = static_cast<uint16_t>(matchingStudentIndex);
+      const bool backendSaved = sendStudentToBackend(
+        studentRecords[existingIndex],
+        studentEmails[existingIndex]);
+      if (!backendSaved) {
+        nextStudentToSync = existingIndex;
+      }
+
+      server.send(
+        200,
+        "application/json",
+        String("{\"success\":true,\"updated\":true,\"sync_pending\":") + (backendSaved ? "false" : "true") + ",\"message\":\"Student details and PHINMAED email updated. Existing fingerprint kept." + String(backendSaved ? "" : " Backend sync is pending.") + "\"}");
       return;
     }
 
@@ -3788,8 +3932,7 @@ void handleStudentRegister() {
       server.send(
         507,
         "application/json",
-        "{\"success\":false,\"message\":\"No fingerprint IDs are available.\"}"
-      );
+        "{\"success\":false,\"message\":\"No fingerprint IDs are available.\"}");
       return;
     }
 
@@ -3799,7 +3942,10 @@ void handleStudentRegister() {
     studentId.toCharArray(pendingStudent.studentId, sizeof(pendingStudent.studentId));
     firstName.toCharArray(pendingStudent.firstName, sizeof(pendingStudent.firstName));
     lastName.toCharArray(pendingStudent.lastName, sizeof(pendingStudent.lastName));
-    pendingStudent.section[0] = '\0';
+    memset(&pendingStudentEmail, 0, sizeof(pendingStudentEmail));
+    const int atPosition = email.indexOf('@');
+    email.substring(0, atPosition).toCharArray(pendingStudentEmail.localPart, sizeof(pendingStudentEmail.localPart));
+    pendingStudentEmail.domain = email.endsWith("@phinmaed.com") ? 1 : 2;
     pendingStudentActive = true;
     pendingEnrollId = id;
   }
@@ -3808,16 +3954,76 @@ void handleStudentRegister() {
   portalOperationRunning = true;
   portalOperationStatus = "Starting";
   portalOperationMessage =
-    "Registering fingerprint ID " + String(pendingEnrollId) +
-    ". Place the student's finger when instructed.";
+    "Registering fingerprint ID " + String(pendingEnrollId) + ". Place the student's finger when instructed.";
 
   server.send(
     200,
     "application/json",
-    String("{\"success\":true,\"id\":") +
-    String(pendingEnrollId) +
-    ",\"message\":\"Fingerprint registration started. Place the same finger when instructed.\"}"
-  );
+    String("{\"success\":true,\"id\":") + String(pendingEnrollId) + ",\"message\":\"Fingerprint registration started. Place the same finger when instructed.\"}");
+}
+
+
+void handleClearDeviceData() {
+  if (!requirePortalAuthentication()) {
+    return;
+  }
+
+  if (portalOperationRunning || currentFingerOperation != FINGER_OP_IDLE) {
+    server.send(
+      409,
+      "application/json",
+      "{\"success\":false,\"message\":\"Finish the current fingerprint operation before clearing device data.\"}");
+    return;
+  }
+
+  if (activeSensorBaud == 0) {
+    server.send(
+      503,
+      "application/json",
+      "{\"success\":false,\"message\":\"Fingerprint sensor is not ready. No device data was cleared.\"}");
+    return;
+  }
+
+  fingerSerial.listen();
+  const uint8_t result = finger.emptyDatabase();
+  if (result != FINGERPRINT_OK) {
+    portalOperationStatus = "Error";
+    portalOperationMessage =
+      "Sensor erase failed (" + String(fingerErrorText(result)) + "). Local records were not cleared.";
+    showTemporaryMessage("Erase failed", "Data kept", 2500);
+    Serial.print("Fingerprint sensor database clear failed: ");
+    Serial.println(result);
+    server.send(
+      502,
+      "application/json",
+      String("{\"success\":false,\"message\":\"Fingerprint sensor erase failed (") + fingerErrorText(result) + "). Local records were not cleared.\"}");
+    return;
+  }
+
+  enrollmentRecordCount = 0;
+  studentRecordCount = 0;
+  nextStudentToSync = 0;
+  pendingEnrollId = 0;
+  pendingStudentActive = false;
+  memset(enrollmentRecords, 0, sizeof(enrollmentRecords));
+  memset(studentRecords, 0, sizeof(studentRecords));
+  memset(studentEmails, 0, sizeof(studentEmails));
+  memset(&pendingStudent, 0, sizeof(pendingStudent));
+  memset(&pendingStudentEmail, 0, sizeof(pendingStudentEmail));
+
+  saveEnrollmentRecords();
+  saveStudentRecords();
+  saveStudentEmails();
+
+  portalOperationStatus = "Success";
+  portalOperationMessage = "All fingerprint templates, saved students, and local enrollment logs were cleared.";
+  showTemporaryMessage("Device cleared", "Ready to register", 2000);
+  Serial.println(portalOperationMessage);
+
+  server.send(
+    200,
+    "application/json",
+    String("{\"success\":true,\"message\":\"") + portalOperationMessage + " Backend database records were not changed.\"}");
 }
 
 
@@ -3835,20 +4041,17 @@ void handlePortalEnroll() {
     server.send(
       409,
       "application/json",
-      "{\"success\":false,\"message\":\"Finish the pending student fingerprint registration first.\"}"
-    );
+      "{\"success\":false,\"message\":\"Finish the pending student fingerprint registration first.\"}");
     return;
   }
 
   if (
-    portalOperationRunning
-  ) {
+    portalOperationRunning) {
 
     server.send(
       409,
       "application/json",
-      "{\"success\":false,\"message\":\"Another operation is running.\"}"
-    );
+      "{\"success\":false,\"message\":\"Another operation is running.\"}");
 
 
     return;
@@ -3856,14 +4059,12 @@ void handlePortalEnroll() {
 
 
   if (
-    !server.hasArg("id")
-  ) {
+    !server.hasArg("id")) {
 
     server.send(
       400,
       "application/json",
-      "{\"success\":false,\"message\":\"ID is required.\"}"
-    );
+      "{\"success\":false,\"message\":\"ID is required.\"}");
 
 
     return;
@@ -3875,15 +4076,12 @@ void handlePortalEnroll() {
 
 
   if (
-    id < 1 ||
-    id > 1000
-  ) {
+    id < 1 || id > 1000) {
 
     server.send(
       400,
       "application/json",
-      "{\"success\":false,\"message\":\"ID must be 1-1000.\"}"
-    );
+      "{\"success\":false,\"message\":\"ID must be 1-1000.\"}");
 
 
     return;
@@ -3891,14 +4089,12 @@ void handlePortalEnroll() {
 
 
   if (
-    activeSensorBaud == 0
-  ) {
+    activeSensorBaud == 0) {
 
     server.send(
       500,
       "application/json",
-      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}"
-    );
+      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}");
 
 
     return;
@@ -3911,14 +4107,12 @@ void handlePortalEnroll() {
   */
 
   if (
-    isIdEnrolled(id)
-  ) {
+    isIdEnrolled(id)) {
 
     server.send(
       409,
       "application/json",
-      "{\"success\":false,\"message\":\"This ID is already enrolled. Delete it first if you want to replace it.\"}"
-    );
+      "{\"success\":false,\"message\":\"This ID is already enrolled. Delete it first if you want to replace it.\"}");
 
 
     return;
@@ -3942,26 +4136,22 @@ void handlePortalEnroll() {
 
 
   portalOperationMessage =
-    "Preparing enrollment for ID " +
-    String(id);
+    "Preparing enrollment for ID " + String(id);
 
 
   Serial.println();
 
   Serial.print(
-    "Portal enrollment requested: ID "
-  );
+    "Portal enrollment requested: ID ");
 
   Serial.println(
-    id
-  );
+    id);
 
 
   server.send(
     200,
     "application/json",
-    "{\"success\":true,\"message\":\"Enrollment started. Place your finger when instructed.\"}"
-  );
+    "{\"success\":true,\"message\":\"Enrollment started. Place your finger when instructed.\"}");
 }
 
 
@@ -3976,14 +4166,12 @@ void handlePortalDelete() {
   }
 
   if (
-    portalOperationRunning
-  ) {
+    portalOperationRunning) {
 
     server.send(
       409,
       "application/json",
-      "{\"success\":false,\"message\":\"Another operation is running.\"}"
-    );
+      "{\"success\":false,\"message\":\"Another operation is running.\"}");
 
 
     return;
@@ -3991,14 +4179,12 @@ void handlePortalDelete() {
 
 
   if (
-    !server.hasArg("id")
-  ) {
+    !server.hasArg("id")) {
 
     server.send(
       400,
       "application/json",
-      "{\"success\":false,\"message\":\"ID is required.\"}"
-    );
+      "{\"success\":false,\"message\":\"ID is required.\"}");
 
 
     return;
@@ -4010,15 +4196,12 @@ void handlePortalDelete() {
 
 
   if (
-    id < 1 ||
-    id > 1000
-  ) {
+    id < 1 || id > 1000) {
 
     server.send(
       400,
       "application/json",
-      "{\"success\":false,\"message\":\"ID must be 1-1000.\"}"
-    );
+      "{\"success\":false,\"message\":\"ID must be 1-1000.\"}");
 
 
     return;
@@ -4026,14 +4209,12 @@ void handlePortalDelete() {
 
 
   if (
-    activeSensorBaud == 0
-  ) {
+    activeSensorBaud == 0) {
 
     server.send(
       500,
       "application/json",
-      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}"
-    );
+      "{\"success\":false,\"message\":\"Fingerprint sensor not ready.\"}");
 
 
     return;
@@ -4045,50 +4226,43 @@ void handlePortalDelete() {
 
   uint8_t result =
     finger.deleteModel(
-      id
-    );
+      id);
 
 
   if (
-    result ==
-    FINGERPRINT_OK
-  ) {
+    result == FINGERPRINT_OK) {
 
     markIdDeleted(
-      id
-    );
+      id);
 
+    const bool cachedStudentRemoved =
+      removeStudentRecordsForFingerprintId(static_cast<uint16_t>(id));
 
     portalOperationStatus =
       "Success";
 
 
     portalOperationMessage =
-      "ID " +
-      String(id) +
-      " deleted successfully.";
+      "ID " + String(id) + " deleted successfully." + String(cachedStudentRemoved ? " Cached student data removed." : "");
 
 
-    showMessage(
+    showTemporaryMessage(
       "Delete OK",
-      String("ID ") + id
-    );
+      String("ID ") + id,
+      1800);
 
 
     Serial.print(
-      "Deleted fingerprint ID: "
-    );
+      "Deleted fingerprint ID: ");
 
     Serial.println(
-      id
-    );
+      id);
 
 
     server.send(
       200,
       "application/json",
-      "{\"success\":true,\"message\":\"Fingerprint deleted and log saved.\"}"
-    );
+      String("{\"success\":true,\"message\":\"Fingerprint deleted and log saved") + (cachedStudentRemoved ? "; cached student data removed to prevent resync" : "") + ".\"}");
 
 
     return;
@@ -4102,8 +4276,7 @@ void handlePortalDelete() {
   addEnrollmentRecord(
     id,
     ACTION_DELETE,
-    0
-  );
+    0);
 
 
   portalOperationStatus =
@@ -4111,19 +4284,20 @@ void handlePortalDelete() {
 
 
   portalOperationMessage =
-    "Delete failed. Error " +
-    String(result);
+    "Delete failed. Error " + String(result);
+
+  showTemporaryMessage(
+    "Delete failed",
+    fingerErrorText(result),
+    2500);
 
 
   server.send(
     500,
     "application/json",
     String(
-      "{\"success\":false,\"message\":\"Delete failed. Error "
-    ) +
-    String(result) +
-    "\"}"
-  );
+      "{\"success\":false,\"message\":\"Delete failed. Error ")
+      + String(result) + "\"}");
 }
 
 
@@ -4143,14 +4317,12 @@ void handleOperationStatus() {
 
   safeMessage.replace(
     "\\",
-    "\\\\"
-  );
+    "\\\\");
 
 
   safeMessage.replace(
     "\"",
-    "\\\""
-  );
+    "\\\"");
 
 
   String json =
@@ -4163,8 +4335,8 @@ void handleOperationStatus() {
 
   json +=
     portalOperationRunning
-    ? "true"
-    : "false";
+      ? "true"
+      : "false";
 
 
   json +=
@@ -4192,10 +4364,7 @@ void handleOperationStatus() {
 
 
   json +=
-    ",\"id\":" +
-    String(
-      pendingEnrollId
-    );
+    ",\"id\":" + String(pendingEnrollId);
 
 
   json +=
@@ -4205,8 +4374,7 @@ void handleOperationStatus() {
   server.send(
     200,
     "application/json",
-    json
-  );
+    json);
 }
 
 
@@ -4217,9 +4385,7 @@ void handleOperationStatus() {
 void processWebEnrollment() {
 
   if (
-    currentFingerOperation !=
-    FINGER_OP_ENROLL
-  ) {
+    currentFingerOperation != FINGER_OP_ENROLL) {
 
     return;
   }
@@ -4235,14 +4401,11 @@ void processWebEnrollment() {
 
   uint8_t result =
     enrollFingerprint(
-      id
-    );
+      id);
 
 
   if (
-    result ==
-    FINGERPRINT_OK
-  ) {
+    result == FINGERPRINT_OK) {
 
     /*
       Only successful enrollment
@@ -4252,8 +4415,7 @@ void processWebEnrollment() {
     addEnrollmentRecord(
       id,
       ACTION_ENROLL,
-      1
-    );
+      1);
 
 
     portalOperationStatus =
@@ -4261,24 +4423,19 @@ void processWebEnrollment() {
 
 
     portalOperationMessage =
-      "ID " +
-      String(id) +
-      " enrolled successfully.";
+      "ID " + String(id) + " enrolled successfully.";
 
 
     showMessage(
       "Enroll OK",
-      String("ID ") + id
-    );
+      String("ID ") + id);
 
 
     Serial.print(
-      "Enrolled ID: "
-    );
+      "Enrolled ID: ");
 
     Serial.println(
-      id
-    );
+      id);
   }
 
   else {
@@ -4290,8 +4447,7 @@ void processWebEnrollment() {
     addEnrollmentRecord(
       id,
       ACTION_ENROLL,
-      0
-    );
+      0);
 
 
     portalOperationStatus =
@@ -4299,20 +4455,13 @@ void processWebEnrollment() {
 
 
     portalOperationMessage =
-      "Enrollment failed: " +
-      String(
-        fingerErrorText(
-          result
-        )
-      );
+      "Enrollment failed: " + String(fingerErrorText(result));
 
 
     showMessage(
       "Enroll Fail",
       fingerErrorText(
-        result
-      )
-    );
+        result));
   }
 
 
@@ -4328,9 +4477,7 @@ void processWebEnrollment() {
 void processStudentEnrollment() {
 
   if (
-    currentFingerOperation !=
-    FINGER_OP_ENROLL_STUDENT
-  ) {
+    currentFingerOperation != FINGER_OP_ENROLL_STUDENT) {
     return;
   }
 
@@ -4341,34 +4488,31 @@ void processStudentEnrollment() {
 
   if (result == FINGERPRINT_OK) {
     pendingStudent.timestamp = time(nullptr);
-    addStudentRecord(pendingStudent);
+    addStudentRecord(pendingStudent, pendingStudentEmail);
     addEnrollmentRecord(id, ACTION_ENROLL, 1);
 
     bool backendSaved =
-      sendStudentToBackend(pendingStudent);
+      sendStudentToBackend(pendingStudent, pendingStudentEmail);
 
     portalOperationStatus =
       backendSaved
-      ? "Success"
-      : "LocalOnly";
+        ? "Success"
+        : "LocalOnly";
 
     portalOperationMessage =
       backendSaved
-      ? "Student saved locally and sent to the backend."
-      : "Student saved locally. Backend sync is not available.";
+        ? "Student saved locally and sent to the backend."
+        : "Student saved locally. Backend sync is not available.";
 
     showMessage("Student saved", String("ID ") + id);
     pendingStudentActive = false;
     pendingEnrollId = 0;
-  }
-  else {
+  } else {
     addEnrollmentRecord(id, ACTION_ENROLL, 0);
 
     portalOperationStatus = "Error";
     portalOperationMessage =
-      "Fingerprint registration failed (" +
-      String(fingerErrorText(result)) +
-      "). Press register again to retry the same ID.";
+      "Fingerprint registration failed (" + String(fingerErrorText(result)) + "). Press register again to retry the same ID.";
 
     showMessage("Register failed", "Retry same ID");
   }
@@ -4382,8 +4526,7 @@ void processStudentEnrollment() {
 // ============================================================
 
 uint8_t enrollFingerprint(
-  uint16_t id
-) {
+  uint16_t id) {
 
   fingerSerial.listen();
 
@@ -4398,8 +4541,7 @@ uint8_t enrollFingerprint(
 
   showMessage(
     "Enroll ID",
-    String(id)
-  );
+    String(id));
 
 
   delay(700);
@@ -4415,16 +4557,14 @@ uint8_t enrollFingerprint(
 
   showMessage(
     "Place finger",
-    ""
-  );
+    "");
 
 
   int p = -1;
 
 
   while (
-    p != FINGERPRINT_OK
-  ) {
+    p != FINGERPRINT_OK) {
 
     servicePortal();
 
@@ -4436,9 +4576,7 @@ uint8_t enrollFingerprint(
 
 
     if (
-      p ==
-      FINGERPRINT_NOFINGER
-    ) {
+      p == FINGERPRINT_NOFINGER) {
 
       delay(120);
 
@@ -4447,9 +4585,7 @@ uint8_t enrollFingerprint(
 
 
     if (
-      p !=
-      FINGERPRINT_OK
-    ) {
+      p != FINGERPRINT_OK) {
 
       return p;
     }
@@ -4461,9 +4597,7 @@ uint8_t enrollFingerprint(
 
 
   if (
-    p !=
-    FINGERPRINT_OK
-  ) {
+    p != FINGERPRINT_OK) {
 
     return p;
   }
@@ -4479,8 +4613,7 @@ uint8_t enrollFingerprint(
 
   showMessage(
     "Remove finger",
-    ""
-  );
+    "");
 
 
   unsigned long removeStart =
@@ -4488,9 +4621,7 @@ uint8_t enrollFingerprint(
 
 
   while (
-    finger.getImage() !=
-    FINGERPRINT_NOFINGER
-  ) {
+    finger.getImage() != FINGERPRINT_NOFINGER) {
 
     servicePortal();
 
@@ -4500,10 +4631,7 @@ uint8_t enrollFingerprint(
 
 
     if (
-      millis() -
-      removeStart >
-      15000
-    ) {
+      millis() - removeStart > 15000) {
 
       return FINGERPRINT_PACKETRECIEVEERR;
     }
@@ -4520,16 +4648,14 @@ uint8_t enrollFingerprint(
 
   showMessage(
     "Place again",
-    ""
-  );
+    "");
 
 
   p = -1;
 
 
   while (
-    p != FINGERPRINT_OK
-  ) {
+    p != FINGERPRINT_OK) {
 
     servicePortal();
 
@@ -4541,9 +4667,7 @@ uint8_t enrollFingerprint(
 
 
     if (
-      p ==
-      FINGERPRINT_NOFINGER
-    ) {
+      p == FINGERPRINT_NOFINGER) {
 
       delay(120);
 
@@ -4552,9 +4676,7 @@ uint8_t enrollFingerprint(
 
 
     if (
-      p !=
-      FINGERPRINT_OK
-    ) {
+      p != FINGERPRINT_OK) {
 
       return p;
     }
@@ -4566,9 +4688,7 @@ uint8_t enrollFingerprint(
 
 
   if (
-    p !=
-    FINGERPRINT_OK
-  ) {
+    p != FINGERPRINT_OK) {
 
     return p;
   }
@@ -4587,9 +4707,7 @@ uint8_t enrollFingerprint(
 
 
   if (
-    p !=
-    FINGERPRINT_OK
-  ) {
+    p != FINGERPRINT_OK) {
 
     return p;
   }
@@ -4605,8 +4723,7 @@ uint8_t enrollFingerprint(
 
   p =
     finger.storeModel(
-      id
-    );
+      id);
 
 
   return p;
@@ -4618,8 +4735,7 @@ uint8_t enrollFingerprint(
 // ============================================================
 
 const char* fingerErrorText(
-  int code
-) {
+  int code) {
 
   switch (code) {
 
@@ -4673,14 +4789,11 @@ void handleResetButton() {
 
   bool reading =
     digitalRead(
-      RESET_BUTTON_PIN
-    );
+      RESET_BUTTON_PIN);
 
 
   if (
-    reading !=
-    lastResetReading
-  ) {
+    reading != lastResetReading) {
 
     resetDebounceTime =
       millis();
@@ -4688,29 +4801,21 @@ void handleResetButton() {
 
 
   if (
-    millis() -
-    resetDebounceTime >=
-    RESET_DEBOUNCE_MS
-  ) {
+    millis() - resetDebounceTime >= RESET_DEBOUNCE_MS) {
 
     if (
-      reading !=
-      stableResetState
-    ) {
+      reading != stableResetState) {
 
       stableResetState =
         reading;
 
 
       if (
-        stableResetState ==
-        LOW
-      ) {
+        stableResetState == LOW) {
 
         showMessage(
           "System",
-          "Resetting..."
-        );
+          "Resetting...");
 
 
         delay(300);
@@ -4740,8 +4845,7 @@ void handleRestart() {
   server.send(
     200,
     "text/plain",
-    "Restarting..."
-  );
+    "Restarting...");
 
 
   delay(500);
@@ -4760,15 +4864,13 @@ void handleNotFound() {
   server.sendHeader(
     "Location",
     "http://192.168.4.1/",
-    true
-  );
+    true);
 
 
   server.send(
     302,
     "text/plain",
-    ""
-  );
+    "");
 }
 
 
@@ -4783,25 +4885,22 @@ void startCaptivePortal() {
   delay(100);
 
   WiFi.mode(
-    WIFI_AP_STA
-  );
+    WIFI_AP_STA);
 
   delay(100);
 
 
   bool apConfigReady =
     WiFi.softAPConfig(
-    AP_IP,
-    AP_GATEWAY,
-    AP_SUBNET
-  );
+      AP_IP,
+      AP_GATEWAY,
+      AP_SUBNET);
 
 
   bool apReady =
     WiFi.softAP(
-    AP_SSID,
-    AP_PASSWORD
-  );
+      AP_SSID,
+      AP_PASSWORD);
 
   delay(300);
 
@@ -4809,63 +4908,50 @@ void startCaptivePortal() {
   Serial.println();
 
   Serial.println(
-    "================================"
-  );
+    "================================");
 
   Serial.println(
-    "CAPTIVE PORTAL"
-  );
+    "CAPTIVE PORTAL");
 
   Serial.println(
-    "================================"
-  );
+    "================================");
 
 
   Serial.print(
-    "SSID: "
-  );
+    "SSID: ");
 
   Serial.println(
-    AP_SSID
-  );
+    AP_SSID);
 
 
   Serial.print(
-    "Password: "
-  );
+    "Password: ");
 
   Serial.println(
-    AP_PASSWORD
-  );
+    AP_PASSWORD);
 
 
   Serial.print(
-    "IP: "
-  );
+    "IP: ");
 
   Serial.println(
-    WiFi.softAPIP()
-  );
+    WiFi.softAPIP());
 
   Serial.print(
-    "AP config: "
-  );
+    "AP config: ");
 
   Serial.println(
     apConfigReady
-    ? "OK"
-    : "FAILED"
-  );
+      ? "OK"
+      : "FAILED");
 
   Serial.print(
-    "AP start: "
-  );
+    "AP start: ");
 
   Serial.println(
     apReady
-    ? "OK"
-    : "FAILED"
-  );
+      ? "OK"
+      : "FAILED");
 
 
   // ----------------------------------------------------------
@@ -4875,8 +4961,7 @@ void startCaptivePortal() {
   dnsServer.start(
     DNS_PORT,
     "*",
-    AP_IP
-  );
+    AP_IP);
 
 
   // ----------------------------------------------------------
@@ -4886,36 +4971,31 @@ void startCaptivePortal() {
   server.on(
     "/",
     HTTP_GET,
-    handlePortalRoot
-  );
+    handlePortalRoot);
 
 
   server.on(
     "/generate_204",
     HTTP_GET,
-    handleGenerate204
-  );
+    handleGenerate204);
 
 
   server.on(
     "/gen_204",
     HTTP_GET,
-    handleGenerate204
-  );
+    handleGenerate204);
 
 
   server.on(
     "/hotspot-detect.html",
     HTTP_GET,
-    handleHotspotDetect
-  );
+    handleHotspotDetect);
 
 
   server.on(
     "/fwlink",
     HTTP_GET,
-    handleFwlink
-  );
+    handleFwlink);
 
 
   // Dashboard
@@ -4923,32 +5003,27 @@ void startCaptivePortal() {
   server.on(
     "/api/dashboard",
     HTTP_GET,
-    handleDashboard
-  );
+    handleDashboard);
 
   server.on(
     "/api/login",
     HTTP_GET,
-    handlePortalLogin
-  );
+    handlePortalLogin);
 
   server.on(
     "/api/logout",
     HTTP_GET,
-    handlePortalLogout
-  );
+    handlePortalLogout);
 
   server.on(
     "/api/students",
     HTTP_GET,
-    handleStudents
-  );
+    handleStudents);
 
   server.on(
     "/api/register-student",
     HTTP_GET,
-    handleStudentRegister
-  );
+    handleStudentRegister);
 
 
   // Enrolled IDs
@@ -4956,8 +5031,7 @@ void startCaptivePortal() {
   server.on(
     "/api/enrolled",
     HTTP_GET,
-    handleEnrolledIDs
-  );
+    handleEnrolledIDs);
 
 
   // Logs
@@ -4965,8 +5039,7 @@ void startCaptivePortal() {
   server.on(
     "/api/logs",
     HTTP_GET,
-    handleLogs
-  );
+    handleLogs);
 
 
   // Enrollment
@@ -4974,8 +5047,7 @@ void startCaptivePortal() {
   server.on(
     "/api/enroll",
     HTTP_GET,
-    handlePortalEnroll
-  );
+    handlePortalEnroll);
 
 
   // Delete
@@ -4983,8 +5055,12 @@ void startCaptivePortal() {
   server.on(
     "/api/delete",
     HTTP_GET,
-    handlePortalDelete
-  );
+    handlePortalDelete);
+
+  server.on(
+    "/api/clear-device-data",
+    HTTP_POST,
+    handleClearDeviceData);
 
 
   // Operation status
@@ -4992,8 +5068,7 @@ void startCaptivePortal() {
   server.on(
     "/api/operation",
     HTTP_GET,
-    handleOperationStatus
-  );
+    handleOperationStatus);
 
 
   // Restart
@@ -5001,21 +5076,18 @@ void startCaptivePortal() {
   server.on(
     "/restart",
     HTTP_GET,
-    handleRestart
-  );
+    handleRestart);
 
 
   server.onNotFound(
-    handleNotFound
-  );
+    handleNotFound);
 
 
   server.begin();
 
 
   Serial.println(
-    "HTTP server started."
-  );
+    "HTTP server started.");
 }
 
 
@@ -5040,8 +5112,7 @@ void servicePortal() {
 int readEnrollIdFromSerial() {
 
   if (
-    !Serial.available()
-  ) {
+    !Serial.available()) {
 
     return 0;
   }
@@ -5049,8 +5120,7 @@ int readEnrollIdFromSerial() {
 
   String line =
     Serial.readStringUntil(
-      '\n'
-    );
+      '\n');
 
 
   line.trim();
@@ -5060,9 +5130,7 @@ int readEnrollIdFromSerial() {
 
   if (
     line.startsWith(
-      "ENROLL"
-    )
-  ) {
+      "ENROLL")) {
 
     line =
       line.substring(6);
@@ -5075,9 +5143,7 @@ int readEnrollIdFromSerial() {
 
 
     if (
-      id >= 1 &&
-      id <= 1000
-    ) {
+      id >= 1 && id <= 1000) {
 
       return id;
     }
@@ -5089,9 +5155,7 @@ int readEnrollIdFromSerial() {
 
   if (
     line.startsWith(
-      "DELETE"
-    )
-  ) {
+      "DELETE")) {
 
     line =
       line.substring(6);
@@ -5104,14 +5168,11 @@ int readEnrollIdFromSerial() {
 
 
     if (
-      id < 1 ||
-      id > 1000
-    ) {
+      id < 1 || id > 1000) {
 
       showMessage(
         "Invalid ID",
-        "Use 1-1000"
-      );
+        "Use 1-1000");
 
 
       return 0;
@@ -5123,30 +5184,23 @@ int readEnrollIdFromSerial() {
 
     uint8_t result =
       finger.deleteModel(
-        id
-      );
+        id);
 
 
     if (
-      result ==
-      FINGERPRINT_OK
-    ) {
+      result == FINGERPRINT_OK) {
 
       markIdDeleted(
-        id
-      );
+        id);
 
 
       showMessage(
         "Delete OK",
-        String("ID ") + id
-      );
+        String("ID ") + id);
 
 
       Serial.println(
-        "Deleted ID " +
-        String(id)
-      );
+        "Deleted ID " + String(id));
     }
 
     else {
@@ -5154,14 +5208,12 @@ int readEnrollIdFromSerial() {
       addEnrollmentRecord(
         id,
         ACTION_DELETE,
-        0
-      );
+        0);
 
 
       showMessage(
         "Delete Fail",
-        String(result)
-      );
+        String(result));
     }
 
 
@@ -5170,8 +5222,7 @@ int readEnrollIdFromSerial() {
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
 
 
     return 0;
@@ -5187,8 +5238,7 @@ int readEnrollIdFromSerial() {
 // ============================================================
 
 int getFingerprintID(
-  int& status
-) {
+  int& status) {
 
   uint8_t consecutiveErrors =
     0;
@@ -5197,8 +5247,7 @@ int getFingerprintID(
   for (
     uint8_t attempt = 0;
     attempt < SEARCH_ATTEMPTS;
-    attempt++
-  ) {
+    attempt++) {
 
     servicePortal();
 
@@ -5210,26 +5259,20 @@ int getFingerprintID(
 
 
     if (
-      status ==
-      FINGERPRINT_NOFINGER
-    ) {
+      status == FINGERPRINT_NOFINGER) {
 
       return -1;
     }
 
 
     if (
-      status !=
-      FINGERPRINT_OK
-    ) {
+      status != FINGERPRINT_OK) {
 
       consecutiveErrors++;
 
 
       if (
-        consecutiveErrors >=
-        REINIT_AFTER_ERRORS
-      ) {
+        consecutiveErrors >= REINIT_AFTER_ERRORS) {
 
         reinitFingerprintSensor();
 
@@ -5239,8 +5282,7 @@ int getFingerprintID(
 
 
       delay(
-        SEARCH_RETRY_DELAY_MS
-      );
+        SEARCH_RETRY_DELAY_MS);
 
 
       continue;
@@ -5252,17 +5294,13 @@ int getFingerprintID(
 
 
     if (
-      status !=
-      FINGERPRINT_OK
-    ) {
+      status != FINGERPRINT_OK) {
 
       consecutiveErrors++;
 
 
       if (
-        consecutiveErrors >=
-        REINIT_AFTER_ERRORS
-      ) {
+        consecutiveErrors >= REINIT_AFTER_ERRORS) {
 
         reinitFingerprintSensor();
 
@@ -5272,8 +5310,7 @@ int getFingerprintID(
 
 
       delay(
-        SEARCH_RETRY_DELAY_MS
-      );
+        SEARCH_RETRY_DELAY_MS);
 
 
       continue;
@@ -5285,18 +5322,14 @@ int getFingerprintID(
 
 
     if (
-      status ==
-      FINGERPRINT_OK
-    ) {
+      status == FINGERPRINT_OK) {
 
       return finger.fingerID;
     }
 
 
     if (
-      status ==
-      FINGERPRINT_NOTFOUND
-    ) {
+      status == FINGERPRINT_NOTFOUND) {
 
       return -1;
     }
@@ -5306,9 +5339,7 @@ int getFingerprintID(
 
 
     if (
-      consecutiveErrors >=
-      REINIT_AFTER_ERRORS
-    ) {
+      consecutiveErrors >= REINIT_AFTER_ERRORS) {
 
       reinitFingerprintSensor();
 
@@ -5318,8 +5349,7 @@ int getFingerprintID(
 
 
     delay(
-      SEARCH_RETRY_DELAY_MS
-    );
+      SEARCH_RETRY_DELAY_MS);
   }
 
 
@@ -5331,23 +5361,15 @@ int getFingerprintID(
 // LARAVEL BACKEND REQUESTS
 // ============================================================
 
-bool postBackendJson(
+int postBackendJson(
   const char* endpoint,
-  const String& payload
-) {
+  const String& payload,
+  String& responseBody) {
 
   if (
-    endpoint == nullptr ||
-    strlen(endpoint) == 0 ||
-    BACKEND_API_KEY == nullptr ||
-    strlen(BACKEND_API_KEY) == 0 ||
-    strcmp(BACKEND_API_KEY, "YOUR_SANCTUM_TOKEN") == 0 ||
-    strcmp(BACKEND_API_KEY, "YOUR_NEW_PRIVATE_TOKEN") == 0 ||
-    strcmp(BACKEND_API_KEY, "YOUR_NEW_PRIVATE_SANCTUM_TOKEN") == 0 ||
-    WiFi.status() != WL_CONNECTED
-  ) {
+    endpoint == nullptr || strlen(endpoint) == 0 || BACKEND_API_KEY == nullptr || strlen(BACKEND_API_KEY) == 0 || strcmp(BACKEND_API_KEY, "YOUR_SANCTUM_TOKEN") == 0 || strcmp(BACKEND_API_KEY, "YOUR_NEW_PRIVATE_TOKEN") == 0 || strcmp(BACKEND_API_KEY, "YOUR_NEW_PRIVATE_SANCTUM_TOKEN") == 0 || WiFi.status() != WL_CONNECTED) {
     Serial.println("Backend API is not configured or WiFi is unavailable.");
-    return false;
+    return 0;
   }
 
   HTTPClient http;
@@ -5358,14 +5380,13 @@ bool postBackendJson(
   if (String(endpoint).startsWith("https://")) {
     backendHttpsClient.setInsecure();
     initialized = http.begin(backendHttpsClient, endpoint);
-  }
-  else {
+  } else {
     initialized = http.begin(backendHttpClient, endpoint);
   }
 
   if (!initialized) {
     Serial.println("Backend API connection could not be initialized.");
-    return false;
+    return 0;
   }
 
   http.addHeader("Content-Type", "application/json");
@@ -5374,18 +5395,16 @@ bool postBackendJson(
   if (BACKEND_USE_BEARER_TOKEN) {
     http.addHeader(
       "Authorization",
-      String("Bearer ") + BACKEND_API_KEY
-    );
-  }
-  else {
+      String("Bearer ") + BACKEND_API_KEY);
+  } else {
     http.addHeader(
       BACKEND_API_KEY_HEADER,
-      BACKEND_API_KEY
-    );
+      BACKEND_API_KEY);
   }
 
   int statusCode = http.POST(payload);
   String response = http.getString();
+  responseBody = response;
 
   Serial.print("Backend HTTP status: ");
   Serial.println(statusCode);
@@ -5397,20 +5416,38 @@ bool postBackendJson(
 
   http.end();
 
-  return statusCode >= 200 && statusCode < 300;
+  return statusCode;
+}
+
+
+String studentEmailAddress(
+  const StudentEmailRecord& email) {
+  if (email.localPart[0] == '\0') {
+    return "";
+  }
+
+  if (email.domain == 1) {
+    return String(email.localPart) + "@phinmaed.com";
+  }
+
+  if (email.domain == 2) {
+    return String(email.localPart) + "@phinmaed.edu.ph";
+  }
+
+  return "";
 }
 
 
 String buildStudentJson(
-  const StudentRecord& record
-) {
+  const StudentRecord& record,
+  const StudentEmailRecord& email) {
 
   String json = "{";
   json += "\"device_id\":\"" + String(BACKEND_DEVICE_ID) + "\"";
   json += ",\"student_id\":\"" + jsonEscape(record.studentId) + "\"";
   json += ",\"first_name\":\"" + jsonEscape(record.firstName) + "\"";
   json += ",\"last_name\":\"" + jsonEscape(record.lastName) + "\"";
-  json += ",\"section\":\"" + jsonEscape(record.section) + "\"";
+  json += ",\"email\":\"" + jsonEscape(studentEmailAddress(email)) + "\"";
   json += ",\"subjects\":\"" + jsonEscape(subjectNames(record.subjectMask)) + "\"";
   json += ",\"fingerprint_id\":" + String(record.fingerprintId);
   json += ",\"enrolled_at\":" + String(record.timestamp);
@@ -5420,18 +5457,20 @@ String buildStudentJson(
 
 
 bool sendStudentToBackend(
-  const StudentRecord& record
-) {
-  return postBackendJson(
+  const StudentRecord& record,
+  const StudentEmailRecord& email) {
+  String responseBody;
+  const int statusCode = postBackendJson(
     STUDENT_API_URL,
-    buildStudentJson(record)
-  );
+    buildStudentJson(record, email),
+    responseBody);
+
+  return statusCode >= 200 && statusCode < 300;
 }
 
 
 String buildAttendanceJson(
-  int id
-) {
+  int id) {
 
   String json = "{";
   json += "\"device_id\":\"" + String(BACKEND_DEVICE_ID) + "\"";
@@ -5443,12 +5482,44 @@ String buildAttendanceJson(
 
 
 bool sendAttendanceToBackend(
-  int id
-) {
-  return postBackendJson(
+  int id) {
+  String responseBody;
+  const int statusCode = postBackendJson(
     ATTENDANCE_API_URL,
-    buildAttendanceJson(id)
-  );
+    buildAttendanceJson(id),
+    responseBody);
+
+  if (responseBody.indexOf("\"code\":\"no_subject_for_time\"") >= 0) {
+    showMessage(
+      "No subject",
+      "for this time");
+
+    return false;
+  }
+
+  if (responseBody.indexOf("\"code\":\"phinmaed_email_required\"") >= 0) {
+    showMessage(
+      "PHINMAED email",
+      "required first");
+
+    return false;
+  }
+
+  if (statusCode >= 200 && statusCode < 300) {
+    if (responseBody.indexOf("\"email_sent\":false") >= 0) {
+      showMessage(
+        "Attendance saved",
+        "Email delivery failed");
+    }
+
+    return true;
+  }
+
+  showMessage(
+    "Attendance failed",
+    "Check connection");
+
+  return false;
 }
 
 
@@ -5457,10 +5528,7 @@ bool sendAttendanceToBackend(
 // ============================================================
 
 void syncNextStoredStudent() {
-  if (WiFi.status() != WL_CONNECTED ||
-      studentRecordCount == 0 ||
-      currentFingerOperation != FINGER_OP_IDLE ||
-      portalOperationRunning) {
+  if (WiFi.status() != WL_CONNECTED || studentRecordCount == 0 || currentFingerOperation != FINGER_OP_IDLE || portalOperationRunning) {
     return;
   }
 
@@ -5474,10 +5542,18 @@ void syncNextStoredStudent() {
   }
 
   const StudentRecord& record = studentRecords[nextStudentToSync];
+  const StudentEmailRecord& email = studentEmails[nextStudentToSync];
+  if (email.localPart[0] == '\0') {
+    Serial.print("Skipping legacy student without a PHINMAED email: ");
+    Serial.println(record.studentId);
+    nextStudentToSync++;
+    return;
+  }
+
   Serial.print("Syncing stored student: ");
   Serial.println(record.studentId);
 
-  if (sendStudentToBackend(record)) {
+  if (sendStudentToBackend(record, email)) {
     Serial.println("Student synced with Laravel.");
     nextStudentToSync++;
   } else {
@@ -5497,14 +5573,12 @@ void setup() {
 
   pinMode(
     RESET_BUTTON_PIN,
-    INPUT_PULLUP
-  );
+    INPUT_PULLUP);
 
 
   lastResetReading =
     digitalRead(
-      RESET_BUTTON_PIN
-    );
+      RESET_BUTTON_PIN);
 
 
   stableResetState =
@@ -5516,13 +5590,11 @@ void setup() {
   // ----------------------------------------------------------
 
   Serial.begin(
-    115200
-  );
+    115200);
 
 
   Serial.setTimeout(
-    200
-  );
+    200);
 
 
   // ----------------------------------------------------------
@@ -5531,8 +5603,7 @@ void setup() {
 
   Wire.begin(
     D2,
-    D1
-  );
+    D1);
 
 
   lcd.init();
@@ -5542,8 +5613,7 @@ void setup() {
 
   showMessage(
     "Booting",
-    "Please wait"
-  );
+    "Please wait");
 
 
   // ----------------------------------------------------------
@@ -5553,6 +5623,7 @@ void setup() {
   loadEnrollmentRecords();
 
   loadStudentRecords();
+  loadStudentEmails();
 
 
   // ----------------------------------------------------------
@@ -5567,8 +5638,7 @@ void setup() {
   // ----------------------------------------------------------
 
   connectWiFi(
-    true
-  );
+    true);
 
 
   // ----------------------------------------------------------
@@ -5576,9 +5646,7 @@ void setup() {
   // ----------------------------------------------------------
 
   if (
-    WiFi.status() ==
-    WL_CONNECTED
-  ) {
+    WiFi.status() == WL_CONNECTED) {
 
     setupTime();
   }
@@ -5590,20 +5658,15 @@ void setup() {
 
   if (
     !initFingerprintSensor(
-      true
-    )
-  ) {
+      true)) {
 
     showMessage(
       "Sensor Error",
-      "Check wiring"
-    );
+      "Check wiring");
 
 
     Serial.println(
-      "Fingerprint sensor not detected."
-    );
-
+      "Fingerprint sensor not detected.");
   }
 
 
@@ -5613,47 +5676,68 @@ void setup() {
 
   showMessage(
     "Ready",
-    "Scan Finger"
-  );
+    "Scan Finger");
 
 
   Serial.println();
 
   Serial.println(
-    "================================"
-  );
+    "================================");
 
   Serial.println(
-    "SYSTEM READY"
-  );
+    "SYSTEM READY");
 
   Serial.println(
-    "================================"
-  );
+    "================================");
+
+  lastActivityMs = millis();
 
 
   Serial.print(
-    "Portal: http://"
-  );
+    "Portal: http://");
 
   Serial.println(
-    WiFi.softAPIP()
-  );
+    WiFi.softAPIP());
 
 
   Serial.println(
-    "Serial commands:"
-  );
+    "Serial commands:");
 
 
   Serial.println(
-    "ENROLL <ID>"
-  );
+    "ENROLL <ID>");
 
 
   Serial.println(
-    "DELETE <ID>"
-  );
+    "DELETE <ID>");
+}
+
+
+void maybeEnterDeepSleep() {
+  if (WiFi.softAPgetStationNum() > 0) {
+    lastActivityMs = millis();
+    return;
+  }
+
+  if (currentFingerOperation != FINGER_OP_IDLE || portalOperationRunning) {
+    return;
+  }
+
+  if (millis() - lastActivityMs < DEEP_SLEEP_IDLE_TIMEOUT_MS) {
+    return;
+  }
+
+  showMessage(
+    "Power saving",
+    "Sleeping 30 sec");
+  Serial.println("Entering timed deep sleep; connect D0/GPIO16 to RST for automatic wake.");
+  delay(250);
+  lcd.noBacklight();
+  WiFi.softAPdisconnect(true);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  ESP.deepSleep(DEEP_SLEEP_DURATION_US, WAKE_RF_DEFAULT);
+  delay(100);
 }
 
 
@@ -5665,6 +5749,8 @@ void loop() {
 
   servicePortal();
 
+  restoreReadyMessageIfDue();
+
 
   handleResetButton();
 
@@ -5674,18 +5760,16 @@ void loop() {
   // ----------------------------------------------------------
 
   if (
-    currentFingerOperation ==
-    FINGER_OP_ENROLL
-  ) {
+    currentFingerOperation == FINGER_OP_ENROLL) {
 
     processWebEnrollment();
 
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
 
+    lastActivityMs = millis();
 
     delay(1000);
 
@@ -5695,16 +5779,15 @@ void loop() {
 
 
   if (
-    currentFingerOperation ==
-    FINGER_OP_ENROLL_STUDENT
-  ) {
+    currentFingerOperation == FINGER_OP_ENROLL_STUDENT) {
 
     processStudentEnrollment();
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
+
+    lastActivityMs = millis();
 
     delay(1000);
 
@@ -5717,13 +5800,10 @@ void loop() {
   // ----------------------------------------------------------
 
   if (
-    WiFi.status() !=
-    WL_CONNECTED
-  ) {
+    WiFi.status() != WL_CONNECTED && millis() - lastWiFiAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
 
     connectWiFi(
-      false
-    );
+      false);
 
 
     servicePortal();
@@ -5739,24 +5819,21 @@ void loop() {
 
 
   if (
-    enrollId > 0
-  ) {
+    enrollId > 0) {
+
+    lastActivityMs = millis();
 
     if (
       isIdEnrolled(
-        enrollId
-      )
-    ) {
+        enrollId)) {
 
       Serial.println(
-        "ID already enrolled."
-      );
+        "ID already enrolled.");
 
 
       showMessage(
         "Already enrolled",
-        String("ID ") + enrollId
-      );
+        String("ID ") + enrollId);
 
 
       delay(1200);
@@ -5764,8 +5841,7 @@ void loop() {
 
       showMessage(
         "Ready",
-        "Scan Finger"
-      );
+        "Scan Finger");
 
 
       return;
@@ -5778,26 +5854,21 @@ void loop() {
 
     uint8_t result =
       enrollFingerprint(
-        enrollId
-      );
+        enrollId);
 
 
     if (
-      result ==
-      FINGERPRINT_OK
-    ) {
+      result == FINGERPRINT_OK) {
 
       addEnrollmentRecord(
         enrollId,
         ACTION_ENROLL,
-        1
-      );
+        1);
 
 
       showMessage(
         "Enroll OK",
-        String("ID ") + enrollId
-      );
+        String("ID ") + enrollId);
     }
 
     else {
@@ -5805,16 +5876,13 @@ void loop() {
       addEnrollmentRecord(
         enrollId,
         ACTION_ENROLL,
-        0
-      );
+        0);
 
 
       showMessage(
         "Enroll Fail",
         fingerErrorText(
-          result
-        )
-      );
+          result));
     }
 
 
@@ -5827,8 +5895,7 @@ void loop() {
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
 
 
     return;
@@ -5848,30 +5915,27 @@ void loop() {
 
   int fingerID =
     getFingerprintID(
-      status
-    );
+      status);
+
+  if (status != FINGERPRINT_NOFINGER) {
+    lastActivityMs = millis();
+  }
 
 
   if (
-    fingerID > 0
-  ) {
+    fingerID > 0) {
 
     showMessage(
-      String("ID ") +
-      fingerID,
-      "Sending..."
-    );
+      String("ID ") + fingerID,
+      "Sending...");
 
 
     sendAttendanceToBackend(
-      fingerID
-    );
+      fingerID);
 
 
     while (
-      finger.getImage() !=
-      FINGERPRINT_NOFINGER
-    ) {
+      finger.getImage() != FINGERPRINT_NOFINGER) {
 
       servicePortal();
 
@@ -5886,8 +5950,7 @@ void loop() {
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
 
 
     return;
@@ -5895,14 +5958,11 @@ void loop() {
 
 
   if (
-    status ==
-    FINGERPRINT_NOTFOUND
-  ) {
+    status == FINGERPRINT_NOTFOUND) {
 
     showMessage(
       "Not registered",
-      "See Program Head"
-    );
+      "See Program Head");
 
 
     delay(1000);
@@ -5910,8 +5970,7 @@ void loop() {
 
     showMessage(
       "Ready",
-      "Scan Finger"
-    );
+      "Scan Finger");
   }
 
 
@@ -5919,10 +5978,11 @@ void loop() {
 
 
   delay(80);
+  maybeEnterDeepSleep();
 }
 
 // Do not create a new token every demo
-// The API token is stored inside the ESP8266 firmware. Only create a new token if:
+// Tuae API token is stored inside the ESP8266 firmware. Only create a new token if:
 // the old token was revoked;
 // you changed the device ID;
 // you changed the backend user;

@@ -9,6 +9,16 @@ use Illuminate\Support\Facades\DB;
 
 class HealthController extends Controller
 {
+    public function status(): JsonResponse
+    {
+        $health = $this->__invoke();
+
+        return response()->json([
+            ...$health->getData(true),
+            'maintenanceMode' => app()->isDownForMaintenance(),
+        ], $health->getStatusCode());
+    }
+
     public function __invoke(): JsonResponse
     {
         try {

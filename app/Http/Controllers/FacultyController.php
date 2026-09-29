@@ -50,9 +50,8 @@ class FacultyController extends Controller
             'name' => $data['name'],
             'email' => $data['email'],
             'role' => 'faculty',
-            'password' => Hash::make(
-                'ChangeMe123!'
-            ),
+            'password' => Hash::make('FACULTY-2026'),
+            'must_change_password' => true,
         ]);
 
         return back()->with(

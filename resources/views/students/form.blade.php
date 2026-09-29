@@ -10,9 +10,9 @@
         @method('PATCH')
     @endif
 
-    @foreach(['student_number' => ['Student ID', 30], 'first_name' => ['First name', 80], 'last_name' => ['Last name', 80], 'email' => ['Email', 255], 'subject' => ['Subject', 100]] as $field => [$label, $maxLength])
+    @foreach(['student_number' => ['Student ID', 30], 'first_name' => ['First name', 80], 'last_name' => ['Last name', 80], 'email' => ['PHINMAED email', 255], 'subject' => ['Subject', 100]] as $field => [$label, $maxLength])
         <label>{{ $label }}
-            <input name="{{ $field }}" type="{{ $field === 'email' ? 'email' : 'text' }}" value="{{ old($field, $student->$field) }}" maxlength="{{ $maxLength }}" @required($field !== 'email' && $field !== 'subject')>
+            <input name="{{ $field }}" type="{{ $field === 'email' ? 'email' : 'text' }}" value="{{ old($field, $student->$field) }}" maxlength="{{ $maxLength }}" placeholder="{{ $field === 'email' ? 'student@phinmaed.com' : '' }}" @required($field !== 'subject')>
         </label>
     @endforeach
 

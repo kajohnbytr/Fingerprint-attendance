@@ -66,7 +66,10 @@ class PortalWorkflowTest extends TestCase
     public function test_admin_can_enroll_view_edit_and_archive_a_student(): void
     {
         $block = Block::factory()->create();
-        $payload = Student::factory()->raw(['block_id' => $block->id]);
+        $payload = Student::factory()->raw([
+            'block_id' => $block->id,
+            'email' => 'student@phinmaed.com',
+        ]);
         $this->actingAs(User::factory()->create(['role' => 'admin']));
 
         $this->post('/students', $payload)->assertRedirect(route('students.index'));
