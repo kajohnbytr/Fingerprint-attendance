@@ -30,7 +30,7 @@ import {
   Radar
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 import type { UserRole } from '../../types/rbac';
 
 const defaultAttendanceData = [
@@ -76,6 +76,7 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
   const [attendanceData, setAttendanceData] = useState(defaultAttendanceData);
   const [pieData, setPieData] = useState(defaultPieData);
   const [alerts, setAlerts] = useState<{ id: string; title: string; details: string; submittedBy: string; time: string }[]>([]);
+  const [auditLogs, setAuditLogs] = useState<{ id: string; action: string; details: string; user: string; time: string; status: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +84,7 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
     const fetchOverview = async () => {
       setError(null);
       try {
-        const res = await fetch(`${API_BASE_URL}/api/admin/overview`, { credentials: 'include' });
+        const res = await apiFetch('/api/admin/overview');
         const text = await res.text();
         const data = text ? (() => { try { return JSON.parse(text); } catch { return null; } })() : null;
         if (!data) throw new Error(res.ok ? 'Invalid response from server' : 'Could not load overview');
@@ -139,6 +140,7 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
             time: a.time ? (typeof a.time === 'string' ? a.time : new Date(a.time).toLocaleString()) : '',
           }))
         );
+        setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load overview');
       } finally {
@@ -266,6 +268,32 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
 
       {/* Charts Section 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {isSuperAdmin ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Quick View of Live Audit Logs</CardTitle>
+              <CardDescription>Latest IoT activity and database changes.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {auditLogs.length === 0 ? (
+                <p className="py-8 text-center text-sm text-neutral-500">No audit activity recorded yet.</p>
+              ) : (
+                <div className="divide-y divide-neutral-100">
+                  {auditLogs.map((log) => (
+                    <div key={log.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-medium text-neutral-900">{log.action}</p>
+                        <p className="mt-1 text-xs text-neutral-500">{log.details}</p>
+                        <p className="mt-1 text-xs text-neutral-400">{log.user} · {log.time}</p>
+                      </div>
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{log.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Attendance Trends</CardTitle>
@@ -301,6 +329,7 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader>

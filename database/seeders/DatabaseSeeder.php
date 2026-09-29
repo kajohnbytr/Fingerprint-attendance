@@ -27,6 +27,8 @@ class DatabaseSeeder extends Seeder
             return;
         }
 
+        $this->call(SuperAdminSeeder::class);
+
         /*
         |--------------------------------------------------------------------------
         | Program Head account

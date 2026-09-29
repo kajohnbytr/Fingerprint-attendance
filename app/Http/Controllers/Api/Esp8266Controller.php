@@ -115,6 +115,15 @@ class Esp8266Controller extends Controller
                 ]);
             }
 
+            DB::table('audit_logs')->insert([
+                'user_id' => null,
+                'action' => $student ? 'IoT student record updated' : 'IoT student record created',
+                'details' => 'Device '.$data['device_id'].' synchronized student '.$data['student_id'].'.',
+                'status' => 'Success',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
             if ($existingStudent) {
                 return response()->json([
                     'message' => 'Student details and email updated; the existing fingerprint is unchanged.',
@@ -139,6 +148,15 @@ class Esp8266Controller extends Controller
                 'student_id' => $data['student_id'],
                 'device_id' => $data['device_id'],
                 'fingerprint_id' => $data['fingerprint_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('audit_logs')->insert([
+                'user_id' => null,
+                'action' => 'IoT student registration',
+                'details' => 'Device '.$data['device_id'].' registered fingerprint '.$data['fingerprint_id'].' for student '.$data['student_id'].'.',
+                'status' => 'Success',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -229,6 +247,15 @@ class Esp8266Controller extends Controller
             'fingerprint_id' => $data['fingerprint_id'],
             'subject_id' => $subject->id,
             'scanned_at' => $scannedAt,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('audit_logs')->insert([
+            'user_id' => null,
+            'action' => 'IoT attendance recorded',
+            'details' => 'Device '.$data['device_id'].' recorded fingerprint '.$data['fingerprint_id'].' for student '.$fingerprint->student_id.'.',
+            'status' => 'Success',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

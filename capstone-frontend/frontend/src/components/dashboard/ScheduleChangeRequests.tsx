@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 type RequestRow = {
   id: string;
@@ -31,9 +31,7 @@ export function ScheduleChangeRequests() {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE_URL}/api/admin/schedule-change-requests`, {
-          credentials: 'include',
-        });
+        const res = await apiFetch('/api/admin/schedule-change-requests');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load schedule change requests');
         if (isMounted) {
@@ -56,10 +54,9 @@ export function ScheduleChangeRequests() {
   const updateStatus = async (id: string, status: 'approved' | 'rejected') => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/schedule-change-requests/${id}`, {
+      const res = await apiFetch(`/api/admin/schedule-change-requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ status, adminNote: noteById[id] || '' }),
       });
       const data = await res.json();

@@ -67,6 +67,47 @@ class FrontendController extends Controller
 
     public function adminOverview(Request $request, AttendanceSummary $attendance): JsonResponse
     {
+        if ($request->user()->role === 'super_admin') {
+            $auditLogs = DB::table('audit_logs')
+                ->leftJoin('users', 'users.id', '=', 'audit_logs.user_id')
+                ->latest('audit_logs.created_at')
+                ->limit(8)
+                ->get(['audit_logs.id', 'audit_logs.action', 'audit_logs.details', 'audit_logs.status', 'audit_logs.created_at', 'users.name as user_name'])
+                ->map(fn (object $log): array => [
+                    'id' => (string) $log->id,
+                    'action' => $log->action,
+                    'details' => $log->details,
+                    'status' => $log->status,
+                    'user' => $log->user_name ?? 'IoT Device',
+                    'time' => $log->created_at,
+                ]);
+
+            return response()->json([
+                'stats' => [
+                    'totalStudents' => Student::query()->where('status', 'active')->count(),
+                    'presentToday' => 0,
+                    'absentToday' => 0,
+                    'lateToday' => 0,
+                ],
+                'systemStats' => [
+                    'totalUsers' => DB::table('users')->count(),
+                    'systemLoad' => 0,
+                    'reportsFiled' => DB::table('app_reports')->count(),
+                    'activeAlerts' => DB::table('app_reports')->whereIn('status', ['open', 'investigating'])->count(),
+                    'totalUsersTrend' => 'Live',
+                    'systemLoadTrend' => 'Normal',
+                    'reportsFiledTrend' => 'Live',
+                    'activeAlertsTrend' => 'Live',
+                ],
+                'attendanceTrendsWeekday' => collect(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])->map(fn (string $day): array => [
+                    'name' => $day, 'present' => 0, 'absent' => 0, 'late' => 0,
+                ]),
+                'pieData' => [],
+                'alerts' => [],
+                'auditLogs' => $auditLogs,
+            ]);
+        }
+
         $today = CarbonImmutable::today();
         $records = $attendance->records($request->user(), [
             'from' => $today->startOfWeek()->toDateString(),
@@ -77,7 +118,7 @@ class FrontendController extends Controller
         $weekdayTrends = collect(CarbonPeriod::create(
             $today->startOfWeek(),
             $today->startOfWeek()->addDays(4)
-        ))->map(function (CarbonImmutable $day) use ($records, $attendance): array {
+        ))->map(function ($day) use ($records, $attendance): array {
             $dayCounts = $attendance->counts($records->where('date', $day->toDateString()));
 
             return [
@@ -114,21 +155,29 @@ class FrontendController extends Controller
             ->with(['enrollments.block'])
             ->orderBy('start_time')
             ->get()
-            ->flatMap(function ($subject): array {
+            ->flatMap(function ($subject) use ($user): array {
                 return $subject->enrollments
                     ->whereNotNull('block_id')
                     ->groupBy('block_id')
-                    ->map(function ($enrollments) use ($subject): array {
+                    ->map(function ($enrollments) use ($subject, $user): array {
                         $block = $enrollments->first()->block;
+                        $graceMinutes = DB::table('class_grace_periods')
+                            ->where('user_id', $user->id)
+                            ->where('subject_id', $subject->id)
+                            ->where('block_id', $block->id)
+                            ->value('late_minutes');
 
                         return [
                             'id' => $subject->id.'-'.$block->id,
+                            'subjectId' => $subject->id,
+                            'blockId' => $block->id,
                             'subjectCode' => $subject->code,
                             'subjectName' => $subject->description,
                             'block' => $block->name,
                             'studentCount' => $enrollments->pluck('student_id')->unique()->count(),
                             'schedule' => $subject->start_time->format('g:i A').' - '.$subject->end_time->format('g:i A'),
                             'room' => $subject->room,
+                            'graceMinutes' => (int) ($graceMinutes ?? 10),
                         ];
                     })
                     ->values()
@@ -141,32 +190,115 @@ class FrontendController extends Controller
             'date' => $today->toDateString(),
             'day' => $today->format('l'),
             'classes' => $classes,
-            'graceMinutes' => $attendance->preferences($user)['late_minutes'],
         ]);
     }
 
-    public function updateFacultyGracePeriod(Request $request): JsonResponse
+    public function updateClassGracePeriod(Request $request, int $subject, int $block): JsonResponse
     {
         $data = $request->validate([
             'graceMinutes' => ['required', 'integer', 'between:0,60'],
         ]);
         $user = $request->user();
-        $existing = DB::table('faculty_preferences')->where('user_id', $user->id)->first();
+        $ownsClass = $user->assignedSubjects()
+            ->whereKey($subject)
+            ->whereHas('enrollments', fn ($query) => $query->where('block_id', $block))
+            ->exists();
 
-        DB::table('faculty_preferences')->updateOrInsert(
-            ['user_id' => $user->id],
+        abort_unless($ownsClass, 404, 'This class is not assigned to you.');
+
+        DB::table('class_grace_periods')->updateOrInsert(
+            ['user_id' => $user->id, 'subject_id' => $subject, 'block_id' => $block],
             [
                 'late_minutes' => $data['graceMinutes'],
-                'report_days' => $existing->report_days ?? 30,
-                'created_at' => $existing->created_at ?? now(),
+                'created_at' => now(),
                 'updated_at' => now(),
             ]
         );
+        DB::table('audit_logs')->insert([
+            'user_id' => $user->id,
+            'action' => 'Class grace period updated',
+            'details' => 'Changed subject '.$subject.', block '.$block.' grace period to '.$data['graceMinutes'].' minutes.',
+            'status' => 'Success',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         return response()->json([
-            'message' => 'Attendance grace period updated.',
+            'message' => 'Class grace period updated.',
             'graceMinutes' => $data['graceMinutes'],
         ]);
+    }
+
+    public function archiveRequests(Request $request): JsonResponse
+    {
+        $requests = DB::table('archive_requests')
+            ->join('users', 'users.id', '=', 'archive_requests.requested_by')
+            ->when($request->user()->role !== 'super_admin', fn ($query) => $query->where('archive_requests.requested_by', $request->user()->id))
+            ->latest('archive_requests.created_at')
+            ->select(['archive_requests.*', 'users.name as requested_by_name'])
+            ->get()
+            ->map(fn (object $archiveRequest): array => [
+                'id' => (string) $archiveRequest->id,
+                'requestId' => 'AR-'.str_pad((string) $archiveRequest->id, 5, '0', STR_PAD_LEFT),
+                'student' => $archiveRequest->student_name,
+                'block' => $archiveRequest->student_block,
+                'reason' => $archiveRequest->reason,
+                'status' => $archiveRequest->status,
+                'requestedBy' => $archiveRequest->requested_by_name,
+            ]);
+
+        return response()->json(['requests' => $requests]);
+    }
+
+    public function storeArchiveRequest(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'studentName' => ['required', 'string', 'max:255'],
+            'studentBlock' => ['required', 'string', 'max:50'],
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+        $id = DB::table('archive_requests')->insertGetId([
+            'requested_by' => $request->user()->id,
+            'student_name' => $data['studentName'],
+            'student_block' => $data['studentBlock'],
+            'reason' => $data['reason'],
+            'status' => 'Pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('audit_logs')->insert([
+            'user_id' => $request->user()->id,
+            'action' => 'Archive request submitted',
+            'details' => 'Created archive request '.$id.' for '.$data['studentName'].'.',
+            'status' => 'Success',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Archive request submitted.', 'id' => $id], 201);
+    }
+
+    public function updateArchiveRequest(Request $request, int $archiveRequest): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['Pending', 'Reviewed', 'Approved', 'Rejected'])],
+        ]);
+        $updated = DB::table('archive_requests')->where('id', $archiveRequest)->update([
+            'status' => $data['status'],
+            'updated_at' => now(),
+        ]);
+
+        abort_unless($updated > 0, 404, 'Archive request not found.');
+        DB::table('audit_logs')->insert([
+            'user_id' => $request->user()->id,
+            'action' => 'Archive request updated',
+            'details' => 'Changed archive request '.$archiveRequest.' to '.$data['status'].'.',
+            'status' => 'Success',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Archive request updated.']);
     }
 
     public function studentProfile(Request $request): JsonResponse
@@ -248,7 +380,10 @@ class FrontendController extends Controller
         $now = CarbonImmutable::now();
         $from = $now->startOfDay()->subDays(29);
         $subjects = $student->subjects()->get();
-        $lateMinutes = (int) (DB::table('system_settings')->where('id', 1)->value('late_minutes') ?? 15);
+        $classGracePeriods = DB::table('class_grace_periods')
+            ->whereIn('subject_id', $subjects->pluck('id'))
+            ->get()
+            ->keyBy(fn (object $period): string => $period->user_id.'|'.$period->subject_id.'|'.$period->block_id);
         $events = DB::table('fingerprint_attendance_events')
             ->where('student_id', $student->student_number)
             ->whereBetween('scanned_at', [$from, $now])
@@ -276,6 +411,9 @@ class FrontendController extends Controller
                         && CarbonImmutable::parse($candidate->scanned_at)->lessThan($end)
                 );
                 $scannedAt = $event ? CarbonImmutable::parse($event->scanned_at) : null;
+                $lateMinutes = (int) ($classGracePeriods->get(
+                    $subject->faculty_id.'|'.$subject->id.'|'.$subject->pivot->block_id
+                )?->late_minutes ?? 10);
                 $status = $scannedAt
                     ? ($scannedAt->greaterThan($start->addMinutes($lateMinutes)) ? 'Late' : 'Present')
                     : 'Absent';

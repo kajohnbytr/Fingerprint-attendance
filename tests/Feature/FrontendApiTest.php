@@ -6,6 +6,7 @@ use App\Models\Block;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
+use Database\Seeders\SuperAdminSeeder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,19 @@ class FrontendApiTest extends TestCase
         ]);
         $this->app['auth']->forgetGuards();
         $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
+    }
+
+    public function test_seeded_super_admin_uses_a_temporary_password_and_must_replace_it(): void
+    {
+        $this->seed(SuperAdminSeeder::class);
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'superadmin@northbridge.test',
+            'password' => 'SuperAdmin2026!',
+            'expectedRole' => 'super_admin',
+        ])->assertOk()
+            ->assertJsonPath('user.role', 'super_admin')
+            ->assertJsonPath('user.mustChangePassword', true);
     }
 
     public function test_spa_login_rejects_inactive_accounts_and_wrong_roles(): void

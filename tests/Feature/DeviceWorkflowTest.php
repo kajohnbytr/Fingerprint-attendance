@@ -87,6 +87,8 @@ class DeviceWorkflowTest extends TestCase
                 ->assertJsonPath('email_sent', true);
         }
         $this->assertDatabaseCount('fingerprint_attendance_events', 2);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'IoT student registration']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'IoT attendance recorded']);
         $this->assertDatabaseHas('fingerprint_attendance_events', [
             'student_id' => $student->student_number,
             'subject_id' => $subject->id,

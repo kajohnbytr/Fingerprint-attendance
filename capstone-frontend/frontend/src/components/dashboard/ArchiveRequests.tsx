@@ -7,7 +7,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
 
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 export function ArchiveRequests({ canReview }: { canReview: boolean }) {
   type ArchiveRequest = {
@@ -30,9 +30,9 @@ export function ArchiveRequests({ canReview }: { canReview: boolean }) {
 
   const fetchRequests = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/archive-requests`, { credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load requests');
+      const res = await apiFetch('/api/admin/archive-requests');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.message || 'Failed to load requests');
       setRequests(data.requests || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load requests');
@@ -55,14 +55,13 @@ export function ArchiveRequests({ canReview }: { canReview: boolean }) {
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/archive-requests`, {
+      const res = await apiFetch('/api/admin/archive-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ studentName: studentName.trim(), studentBlock: studentBlock.trim(), reason: reason.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to submit');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.message || 'Failed to submit');
       setSuccessMessage('Request submitted successfully');
       setStudentName('');
       setStudentBlock('');
@@ -77,14 +76,13 @@ export function ArchiveRequests({ canReview }: { canReview: boolean }) {
 
   const handleStatusUpdate = async (id: string, status: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/archive-requests/${id}`, {
+      const res = await apiFetch(`/api/admin/archive-requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ status }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.message || 'Failed to update');
       fetchRequests();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update');
@@ -172,4 +170,12 @@ export function ArchiveRequests({ canReview }: { canReview: boolean }) {
       </div>
     </div>
   );
+}
+
+async function readJson(response: Response): Promise<any> {
+  if (!(response.headers.get('content-type') ?? '').includes('application/json')) {
+    throw new Error('The archive request service returned an invalid response. Please sign in again.');
+  }
+
+  return response.json();
 }

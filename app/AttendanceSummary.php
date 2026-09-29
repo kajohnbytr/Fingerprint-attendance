@@ -59,7 +59,11 @@ class AttendanceSummary
         $from = CarbonImmutable::parse($filters['from'])->startOfDay();
         $to = CarbonImmutable::parse($filters['to'])->endOfDay();
         $now = CarbonImmutable::now();
-        $lateMinutes = $this->preferences($faculty)['late_minutes'];
+        $classGracePeriods = DB::table('class_grace_periods')
+            ->where('user_id', $faculty->id)
+            ->whereIn('subject_id', $enrollments->pluck('subject_id')->unique())
+            ->get()
+            ->keyBy(fn (object $period): string => $period->subject_id.'|'.$period->block_id);
         $scans = DB::table('fingerprint_attendance_events')
             ->whereIn('student_id', $enrollments->pluck('student.student_number')->filter()->unique())
             ->whereBetween('scanned_at', [$from, $to->min($now)])
@@ -90,6 +94,7 @@ class AttendanceSummary
                         return $time->greaterThanOrEqualTo($start) && $time->lessThan($end);
                     });
                 $scannedAt = $scan ? CarbonImmutable::parse($scan->scanned_at) : null;
+                $lateMinutes = (int) ($classGracePeriods->get($subject->id.'|'.$enrollment->block_id)?->late_minutes ?? 10);
                 $status = $scannedAt
                     ? ($scannedAt->isAfter($start->addMinutes($lateMinutes)) ? 'late' : 'present')
                     : ($end->lessThanOrEqualTo($now) ? 'absent' : 'pending');

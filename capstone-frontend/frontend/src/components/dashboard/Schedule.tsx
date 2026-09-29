@@ -7,12 +7,15 @@ import type { UserRole } from '../../types/rbac';
 
 type ScheduledClass = {
   id: string;
+  subjectId: number;
+  blockId: number;
   subjectCode: string;
   subjectName: string;
   block: string;
   studentCount: number;
   schedule: string;
   room: string;
+  graceMinutes: number;
 };
 
 type ScheduleResponse = {
@@ -20,12 +23,11 @@ type ScheduleResponse = {
   date: string;
   day: string;
   classes: ScheduledClass[];
-  graceMinutes: number;
 };
 
 export function Schedule({ role: _role }: { role: UserRole }) {
   const [schedule, setSchedule] = useState<ScheduleResponse | null>(null);
-  const [graceMinutes, setGraceMinutes] = useState('');
+  const [graceMinutes, setGraceMinutes] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function Schedule({ role: _role }: { role: UserRole }) {
         throw new Error(data.message ?? 'Failed to load your class schedule.');
       }
       setSchedule(data);
-      setGraceMinutes(String(data.graceMinutes));
+      setGraceMinutes(Object.fromEntries(data.classes.map((scheduledClass: ScheduledClass) => [scheduledClass.id, String(scheduledClass.graceMinutes)])));
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Failed to load your class schedule.');
     } finally {
@@ -53,22 +55,22 @@ export function Schedule({ role: _role }: { role: UserRole }) {
     loadSchedule();
   }, [loadSchedule]);
 
-  const saveGracePeriod = async (event: React.FormEvent) => {
+  const saveGracePeriod = async (event: React.FormEvent, scheduledClass: ScheduledClass) => {
     event.preventDefault();
     setError(null);
     setSuccess(null);
     setIsSaving(true);
     try {
-      const response = await apiFetch('/api/admin/grace-period', {
+      const response = await apiFetch(`/api/admin/classes/${scheduledClass.subjectId}/${scheduledClass.blockId}/grace-period`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ graceMinutes: Number(graceMinutes) }),
+        body: JSON.stringify({ graceMinutes: Number(graceMinutes[scheduledClass.id]) }),
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.message ?? 'Failed to update the grace period.');
       }
-      setGraceMinutes(String(data.graceMinutes));
+      setGraceMinutes((current) => ({ ...current, [scheduledClass.id]: String(data.graceMinutes) }));
       setSuccess(data.message);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Failed to update the grace period.');
@@ -107,6 +109,26 @@ export function Schedule({ role: _role }: { role: UserRole }) {
                 <Detail icon={Clock} label="Class time" value={scheduledClass.schedule} />
                 <Detail icon={MapPin} label="Room" value={scheduledClass.room || 'Not assigned'} />
               </CardContent>
+              <CardContent className="border-t border-neutral-100 pt-4">
+                <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => saveGracePeriod(event, scheduledClass)}>
+                  <label className="text-sm font-medium text-neutral-700">
+                    Grace period (minutes)
+                    <Input
+                      type="number"
+                      min={0}
+                      max={60}
+                      required
+                      value={graceMinutes[scheduledClass.id] ?? '10'}
+                      onChange={(event) => setGraceMinutes((current) => ({ ...current, [scheduledClass.id]: event.target.value }))}
+                      className="mt-2 w-36"
+                    />
+                  </label>
+                  <button type="submit" disabled={isSaving} className="h-10 rounded-md bg-neutral-900 px-5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+                    {isSaving ? 'Saving...' : 'Save for this class'}
+                  </button>
+                </form>
+                <p className="mt-2 text-xs text-neutral-500">The default is 10 minutes. Later scans are marked Late.</p>
+              </CardContent>
             </Card>
           ))}
         </div>
@@ -120,38 +142,7 @@ export function Schedule({ role: _role }: { role: UserRole }) {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Attendance grace period</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex max-w-lg flex-col gap-3 sm:flex-row sm:items-end" onSubmit={saveGracePeriod}>
-            <label className="flex-1 text-sm font-medium text-neutral-700">
-              Minutes after class starts
-              <Input
-                type="number"
-                min={0}
-                max={60}
-                required
-                value={graceMinutes}
-                onChange={(event) => setGraceMinutes(event.target.value)}
-                className="mt-2"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="h-10 rounded-md bg-neutral-900 px-5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-            >
-              {isSaving ? 'Saving...' : 'Save grace period'}
-            </button>
-          </form>
-          <p className="mt-3 text-xs text-neutral-500">
-            Attendance scans within this many minutes after the scheduled start are marked Present; later scans are Late.
-          </p>
-          {success && <p className="mt-3 text-sm text-emerald-700">{success}</p>}
-        </CardContent>
-      </Card>
+      {success && <p className="text-sm text-emerald-700">{success}</p>}
     </div>
   );
 }

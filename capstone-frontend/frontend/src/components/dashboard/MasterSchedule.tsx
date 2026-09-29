@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 type Entry = {
   id: string;
@@ -49,9 +49,7 @@ export function MasterSchedule() {
     setIsLoading(true);
     try {
       const q = filterBlock.trim() ? `?block=${encodeURIComponent(filterBlock.trim())}` : '';
-      const res = await fetch(`${API_BASE_URL}/api/admin/master-schedule${q}`, {
-        credentials: 'include',
-      });
+      const res = await apiFetch(`/api/admin/master-schedule${q}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setEntries(Array.isArray(data.entries) ? data.entries : []);
@@ -81,10 +79,9 @@ export function MasterSchedule() {
         graceOverrideMinutes: form.graceOverrideMinutes === '' ? null : Number(form.graceOverrideMinutes),
         order: Number(form.order) || 0,
       };
-      const res = await fetch(`${API_BASE_URL}/api/admin/master-schedule`, {
+      const res = await apiFetch('/api/admin/master-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -102,10 +99,9 @@ export function MasterSchedule() {
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/master-schedule/sync`, {
+      const res = await apiFetch('/api/admin/master-schedule/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({}),
       });
       const data = await res.json();
@@ -121,9 +117,8 @@ export function MasterSchedule() {
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this row and re-sync student schedules for that block?')) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/master-schedule/${id}`, {
+      const res = await apiFetch(`/api/admin/master-schedule/${id}`, {
         method: 'DELETE',
-        credentials: 'include',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Delete failed');

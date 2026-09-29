@@ -133,11 +133,6 @@ export function Settings({
                   <Input id="threshold" type="number" defaultValue="75" />
                   <p className="text-xs text-neutral-500">Students below this threshold will be flagged.</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="late-tolerance">Late Arrival Tolerance (Minutes)</Label>
-                  <Input id="late-tolerance" type="number" defaultValue="15" />
-                  <p className="text-xs text-neutral-500">Time allowed after class start before marked as Late.</p>
-                </div>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-base">Proxy Detection</Label>
@@ -194,7 +189,7 @@ export function Settings({
               <CardHeader>
                 <CardTitle>Notification Preferences</CardTitle>
                 <CardDescription>
-                  Configure email and SMS alerts.
+                  Configure email alerts.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -215,15 +210,6 @@ export function Settings({
                     </p>
                   </div>
                   <Switch defaultChecked />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">SMS Critical Alerts</Label>
-                    <p className="text-sm text-neutral-500">
-                      Send SMS for security breaches or critical errors.
-                    </p>
-                  </div>
-                  <Switch />
                 </div>
               </CardContent>
               <CardFooter>

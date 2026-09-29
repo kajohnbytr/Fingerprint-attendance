@@ -127,21 +127,83 @@ class FacultyFrontendLoginTest extends TestCase
             ->assertJsonPath('classes.0.subjectCode', 'ITE 367')
             ->assertJsonPath('classes.0.subjectName', 'Managing IT Resources')
             ->assertJsonPath('classes.0.block', 'COMSEC02')
-            ->assertJsonPath('classes.0.studentCount', 2);
+            ->assertJsonPath('classes.0.studentCount', 2)
+            ->assertJsonPath('classes.0.graceMinutes', 10);
     }
 
-    public function test_professor_can_customize_attendance_grace_period(): void
+    public function test_professor_schedule_returns_no_classes_when_nothing_is_scheduled_today(): void
+    {
+        Carbon::setTestNow('2026-09-29 09:00:00');
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        Subject::factory()->create(['faculty_id' => $faculty->id, 'day' => 'Wednesday']);
+
+        $this->actingAs($faculty)->getJson('/api/admin/schedule')
+            ->assertOk()
+            ->assertJsonCount(0, 'classes');
+    }
+
+    public function test_professor_can_customize_each_class_grace_period(): void
+    {
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        $firstBlock = Block::factory()->create();
+        $secondBlock = Block::factory()->create();
+        $firstSubject = Subject::factory()->create(['faculty_id' => $faculty->id]);
+        $secondSubject = Subject::factory()->create(['faculty_id' => $faculty->id]);
+
+        foreach ([[$firstSubject, $firstBlock], [$secondSubject, $secondBlock]] as [$subject, $block]) {
+            Enrollment::create([
+                'student_id' => Student::factory()->create(['block_id' => $block->id])->id,
+                'subject_id' => $subject->id,
+                'block_id' => $block->id,
+                'enrolled_by' => $faculty->id,
+            ]);
+        }
+
+        $this->actingAs($faculty)->putJson("/api/admin/classes/{$firstSubject->id}/{$firstBlock->id}/grace-period", [
+            'graceMinutes' => 15,
+        ])->assertOk()
+            ->assertJsonPath('graceMinutes', 15);
+        $this->putJson("/api/admin/classes/{$secondSubject->id}/{$secondBlock->id}/grace-period", [
+            'graceMinutes' => 20,
+        ])->assertOk()
+            ->assertJsonPath('graceMinutes', 20);
+
+        $this->assertDatabaseHas('class_grace_periods', [
+            'user_id' => $faculty->id,
+            'subject_id' => $firstSubject->id,
+            'block_id' => $firstBlock->id,
+            'late_minutes' => 15,
+        ]);
+        $this->assertDatabaseHas('class_grace_periods', [
+            'user_id' => $faculty->id,
+            'subject_id' => $secondSubject->id,
+            'block_id' => $secondBlock->id,
+            'late_minutes' => 20,
+        ]);
+    }
+
+    public function test_professor_overview_returns_json(): void
     {
         $faculty = User::factory()->create(['role' => 'faculty']);
 
-        $this->actingAs($faculty)->putJson('/api/admin/grace-period', [
-            'graceMinutes' => 12,
-        ])->assertOk()
-            ->assertJsonPath('graceMinutes', 12);
+        $this->actingAs($faculty)->getJson('/api/admin/overview')
+            ->assertOk()
+            ->assertJsonStructure(['stats', 'attendanceTrendsWeekday', 'pieData', 'alerts']);
+    }
 
-        $this->assertDatabaseHas('faculty_preferences', [
-            'user_id' => $faculty->id,
-            'late_minutes' => 12,
-        ]);
+    public function test_professor_can_submit_and_read_archive_requests(): void
+    {
+        $faculty = User::factory()->create(['role' => 'faculty']);
+
+        $this->actingAs($faculty)->postJson('/api/admin/archive-requests', [
+            'studentName' => 'Test Student',
+            'studentBlock' => 'BSIT-4A',
+            'reason' => 'Student has completed the program.',
+        ])->assertCreated();
+
+        $this->getJson('/api/admin/archive-requests')
+            ->assertOk()
+            ->assertJsonPath('requests.0.student', 'Test Student')
+            ->assertJsonPath('requests.0.status', 'Pending');
     }
 }

@@ -6,7 +6,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
 
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 export function AppReports({ mode }: { mode: 'submit' | 'review' }) {
   const [reports, setReports] = useState<{ id: string; reportId: string; title: string; severity: string; status: string; submittedBy: string; date: string }[]>([]);
@@ -19,7 +19,7 @@ export function AppReports({ mode }: { mode: 'submit' | 'review' }) {
         setIsLoading(true);
         setError(null);
         try {
-          const res = await fetch(`${API_BASE_URL}/api/admin/app-reports`, { credentials: 'include' });
+          const res = await apiFetch('/api/admin/app-reports');
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to load reports');
           setReports(data.reports || []);
@@ -35,10 +35,9 @@ export function AppReports({ mode }: { mode: 'submit' | 'review' }) {
 
   const updateReportStatus = async (id: string, status: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/app-reports/${id}`, {
+      const res = await apiFetch(`/api/admin/app-reports/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ status }),
       });
       const data = await res.json();
@@ -127,12 +126,11 @@ export function AppReports({ mode }: { mode: 'submit' | 'review' }) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/students/reports`, {
+      const response = await apiFetch('/api/students/reports', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           subject,
           category,

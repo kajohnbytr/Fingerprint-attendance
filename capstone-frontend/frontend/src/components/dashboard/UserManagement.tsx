@@ -41,7 +41,7 @@ import {
 } from "../ui/dialog";
 import { Label } from "../ui/label";
 
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 type UserRow = { id: string; name: string; email: string; role: string; roleLabel: string; department: string; status: string; handledBlocks?: string[] };
 
@@ -70,7 +70,7 @@ export function UserManagement() {
   const fetchUsers = async () => {
     try {
       const params = searchTerm ? new URLSearchParams({ search: searchTerm }) : '';
-      const res = await fetch(`${API_BASE_URL}/api/admin/users${params ? `?${params}` : ''}`, { credentials: 'include' });
+      const res = await apiFetch(`/api/admin/users${params ? `?${params}` : ''}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load users');
       setUsers(data.users || []);
@@ -83,7 +83,7 @@ export function UserManagement() {
 
   const fetchAvailableBlocks = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/available-blocks`, { credentials: 'include' });
+      const res = await apiFetch('/api/admin/available-blocks');
       const data = await res.json();
       if (res.ok && Array.isArray(data.blocks)) {
         setAvailableBlocks(data.blocks);
@@ -112,10 +112,9 @@ export function UserManagement() {
       if (addRole === 'admin' && addHandledBlocks.length > 0) {
         payload.handledBlocks = addHandledBlocks;
       }
-      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
+      const res = await apiFetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -154,10 +153,9 @@ export function UserManagement() {
       if (editRole === 'admin') {
         payload.handledBlocks = editHandledBlocks;
       }
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${editingUser.id}`, {
+      const res = await apiFetch(`/api/admin/users/${editingUser.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = await res.json();

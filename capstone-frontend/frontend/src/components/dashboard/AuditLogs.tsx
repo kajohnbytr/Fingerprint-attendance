@@ -3,7 +3,7 @@ import { Shield, Clock, Search } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 export function AuditLogs() {
   const [logs, setLogs] = useState<{ id: string; action: string; user: string; details: string; time: string; status: string }[]>([]);
@@ -15,7 +15,7 @@ export function AuditLogs() {
     const fetchLogs = async () => {
       try {
         const params = search ? new URLSearchParams({ search, limit: '50' }) : new URLSearchParams({ limit: '50' });
-        const res = await fetch(`${API_BASE_URL}/api/admin/audit-logs?${params}`, { credentials: 'include' });
+        const res = await apiFetch(`/api/admin/audit-logs?${params}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load logs');
         setLogs((data.logs || []).map((l: any) => ({
