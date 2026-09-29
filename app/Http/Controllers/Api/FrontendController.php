@@ -11,10 +11,60 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class FrontendController extends Controller
 {
+    public function attendanceReports(Request $request, AttendanceSummary $attendance): JsonResponse
+    {
+        $data = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+            'block' => ['nullable', 'string', 'max:50'],
+            'status' => ['nullable', Rule::in(['present', 'absent', 'late'])],
+        ]);
+        $date = CarbonImmutable::parse($data['date'] ?? 'today')->toDateString();
+        $blocks = $attendance->enrollments($request->user())
+            ->get()
+            ->pluck('block')
+            ->filter()
+            ->unique('id')
+            ->sortBy('name')
+            ->values();
+        $block = $blocks->firstWhere('name', $data['block'] ?? null);
+
+        $records = $attendance->records($request->user(), [
+            'from' => $date,
+            'to' => $date,
+            'block_id' => $block?->id,
+            'status' => $data['status'] ?? null,
+        ])->reject(fn (array $record): bool => $record['status'] === 'pending')
+            ->map(function (array $record): array {
+                $enrollment = $record['enrollment'];
+                $student = $enrollment->student;
+                $block = $enrollment->block;
+
+                return [
+                    'id' => $enrollment->id.'-'.$record['date'],
+                    'date' => $record['date'],
+                    'class' => 'Year '.$student->year_level.' / '.$block->name,
+                    'status' => ucfirst($record['status']),
+                    'student' => [
+                        'id' => (string) $student->id,
+                        'name' => $student->full_name,
+                        'idNumber' => $student->student_number,
+                        'email' => $student->email,
+                        'block' => $block->name,
+                    ],
+                ];
+            });
+
+        return response()->json([
+            'reports' => $records,
+            'blocks' => $blocks->pluck('name'),
+        ]);
+    }
+
     public function adminOverview(Request $request, AttendanceSummary $attendance): JsonResponse
     {
         $today = CarbonImmutable::today();

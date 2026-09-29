@@ -25,7 +25,7 @@
   CAPTIVE PORTAL
   ------------------------------------------------------------
   SSID     : Attendance-Setup
-  Password : 12345678
+  Password : YOUR_AP_PASSWORD
   IP       : 192.168.4.1
 
   FINGERPRINT
@@ -212,20 +212,18 @@ unsigned long resetDebounceTime = 0;
 
 // ============================================================
 // WIFI
-// HUAWEI-2.4G-W9Tv, Redmi K40 Gaming
-// eWw5JHcq, 12345678
 // ============================================================
 
 // Keep both lists in the same order. Commas separate network entries.
 // SSIDs and passwords that contain commas are not supported.
 const char* WIFI_NAMES =
-  "HUAWEI-2.4G-W9Tv,Redmi K40 Gaming";
+  "YOUR_WIFI_SSID";
 
 const char* WIFI_PASSWORDS =
-  "eWw5JHcq,12345678";
+  "YOUR_WIFI_PASSWORD";
 
-const unsigned long WIFI_CONNECT_TIMEOUT_MS = 12000;
-const unsigned long WIFI_RECONNECT_INTERVAL_MS = 30000;
+const unsigned long WIFI_CONNECT_TIMEOUT_MS = 60000;
+const unsigned long WIFI_RECONNECT_INTERVAL_MS = 0000;
 unsigned long lastWiFiAttemptMs = 0;
 
 
@@ -237,7 +235,7 @@ const char* AP_SSID =
   "Attendance-Setup";
 
 const char* AP_PASSWORD =
-  "12345678";
+  "YOUR_AP_PASSWORD";
 
 IPAddress AP_IP(
   192,
@@ -269,7 +267,7 @@ unsigned long restoreReadyMessageAtMs = 0;
 
 // Change these before deploying the device.
 const char* PH_USERNAME = "programhead";
-const char* PH_PASSWORD = "admin";
+const char* PH_PASSWORD = "YOUR_PORTAL_PASSWORD";
 
 
 // ============================================================

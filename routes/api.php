@@ -26,6 +26,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::middleware(['active', 'password.changed', 'role:admin,faculty'])->group(function (): void {
         Route::get('/admin/overview', [FrontendController::class, 'adminOverview']);
+        Route::get('/admin/reports', [FrontendController::class, 'attendanceReports']);
         Route::get('/admin/schedule', [FrontendController::class, 'facultySchedule']);
         Route::put('/admin/grace-period', [FrontendController::class, 'updateFacultyGracePeriod']);
     });

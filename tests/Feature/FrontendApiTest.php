@@ -202,4 +202,53 @@ class FrontendApiTest extends TestCase
             ->assertJsonPath('records.0.status', 'Present')
             ->assertJsonPath('records.0.note', 'IT201 - Introduction to Computing');
     }
+
+    public function test_professor_attendance_reports_return_student_statuses_as_json(): void
+    {
+        Carbon::setTestNow('2026-09-28 10:00:00');
+        $professor = User::factory()->create([
+            'role' => 'faculty',
+            'must_change_password' => false,
+        ]);
+        $block = Block::factory()->create([
+            'name' => 'BSIT-4A',
+            'year_level' => 4,
+        ]);
+        $student = Student::factory()->create([
+            'block_id' => $block->id,
+            'year_level' => 4,
+        ]);
+        $subject = Subject::factory()->create([
+            'faculty_id' => $professor->id,
+            'day' => 'Monday',
+            'start_time' => '08:00',
+            'end_time' => '09:30',
+        ]);
+        DB::table('enrollments')->insert([
+            'student_id' => $student->id,
+            'subject_id' => $subject->id,
+            'block_id' => $block->id,
+            'enrolled_by' => $professor->id,
+            'created_at' => now()->subWeek(),
+            'updated_at' => now()->subWeek(),
+        ]);
+        DB::table('fingerprint_attendance_events')->insert([
+            'student_id' => $student->student_number,
+            'device_id' => 'sensor-01',
+            'fingerprint_id' => 1,
+            'subject_id' => $subject->id,
+            'scanned_at' => '2026-09-28 08:05:00',
+            'created_at' => '2026-09-28 08:05:00',
+            'updated_at' => '2026-09-28 08:05:00',
+        ]);
+
+        $this->actingAs($professor)
+            ->getJson('/api/admin/reports?date=2026-09-28&block=BSIT-4A&status=present')
+            ->assertOk()
+            ->assertJsonPath('reports.0.date', '2026-09-28')
+            ->assertJsonPath('reports.0.class', 'Year 4 / BSIT-4A')
+            ->assertJsonPath('reports.0.status', 'Present')
+            ->assertJsonPath('reports.0.student.idNumber', $student->student_number)
+            ->assertJsonPath('blocks.0', 'BSIT-4A');
+    }
 }
