@@ -22,14 +22,12 @@ async function safeJson(response: Response): Promise<any> {
 
 export function LoginForm({
   onLogin,
-  onForgot,
   forcedRole,
   showRoleSelector = false,
   title = 'Portal Login',
   subtitle = 'Enter your credentials to continue',
 }: {
   onLogin?: (user: AuthenticatedUser) => void;
-  onForgot?: () => void;
   forcedRole?: UserRole;
   showRoleSelector?: boolean;
   title?: string;
@@ -40,6 +38,8 @@ export function LoginForm({
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
   const [captcha, setCaptcha] = useState(() => createCaptcha());
   const [captchaAnswer, setCaptchaAnswer] = useState('');
   const [captchaTouched, setCaptchaTouched] = useState(false);
@@ -81,16 +81,15 @@ export function LoginForm({
     setIsLoading(true);
 
     try {
-      const requestBody: { email: string; password: string; expectedRole?: string } = {
-        email,
-        password,
-      };
+      const requestBody: Record<string, string> = challengeToken
+        ? { challengeToken, code: verificationCode }
+        : { email, password };
 
       if (forcedRole) {
         requestBody.expectedRole = forcedRole;
       }
 
-      const response = await apiFetch('/api/auth/login', {
+      const response = await apiFetch(challengeToken ? '/api/auth/mfa' : '/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -99,6 +98,13 @@ export function LoginForm({
       });
 
       const data = await safeJson(response);
+
+      if (response.status === 202 && data.mfaRequired && data.challengeToken) {
+        setChallengeToken(data.challengeToken);
+        setPassword('');
+        setIsLoading(false);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');
@@ -138,6 +144,27 @@ export function LoginForm({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
+          {challengeToken ? (
+            <div>
+              <label htmlFor="verification-code" className="block text-sm font-medium text-neutral-700 mb-2">
+                Verification code
+              </label>
+              <input
+                id="verification-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                required
+                autoFocus
+                className="w-full px-4 py-3 rounded-lg border border-neutral-300 focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 outline-none text-neutral-900"
+              />
+              <p className="mt-2 text-sm text-neutral-500">Check your email for the six-digit code.</p>
+            </div>
+          ) : <>
           {/* Email Field */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-neutral-700 mb-2">
@@ -182,8 +209,9 @@ export function LoginForm({
               </button>
             </div>
           </div>
+          </>}
 
-          {isStudentLogin && (
+          {isStudentLogin && !challengeToken && (
             <>
               {/* CAPTCHA */}
               <div>
@@ -268,7 +296,7 @@ export function LoginForm({
           )}
 
           {/* Remember Me & Forgot Password */}
-          <div className="flex items-center justify-between">
+          {!challengeToken && <div className="flex items-center justify-between">
             <label className="flex items-center cursor-pointer group">
               <input
                 type="checkbox"
@@ -278,14 +306,7 @@ export function LoginForm({
                 Remember me
               </span>
             </label>
-            <button
-              type="button"
-              onClick={onForgot}
-              className="text-sm text-neutral-600 hover:text-neutral-900 transition-colors"
-            >
-              Forgot password?
-            </button>
-          </div>
+          </div>}
 
           {/* Submit Button */}
           <button
@@ -302,7 +323,7 @@ export function LoginForm({
                 Signing in...
               </span>
             ) : (
-              'Sign In'
+              challengeToken ? 'Verify and Sign In' : 'Sign In'
             )}
           </button>
         </form>

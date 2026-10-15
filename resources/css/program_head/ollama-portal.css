@@ -1,0 +1,761 @@
+.portal-page.role-admin,
+.portal-page.role-program_head,
+.portal-page.role-faculty {
+    --ollama-ink: #000000;
+    --ollama-body: #737373;
+    --ollama-charcoal: #525252;
+    --ollama-mute: #a3a3a3;
+    --ollama-canvas: #ffffff;
+    --ollama-soft: #fafafa;
+    --ollama-line: #e5e5e5;
+    --ollama-line-strong: #d4d4d4;
+    min-height: 100vh;
+    background: var(--ollama-canvas) !important;
+    color: var(--ollama-ink) !important;
+    font-family: "SF Pro Rounded", ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    font-size: 14px;
+}
+
+.portal-page.role-admin .shell,
+.portal-page.role-program_head .shell,
+.portal-page.role-faculty .shell {
+    grid-template-columns: 232px minmax(0, 1fr);
+    background: var(--ollama-canvas);
+}
+
+.portal-page.role-admin .sidebar,
+.portal-page.role-program_head .sidebar,
+.portal-page.role-faculty .sidebar {
+    border-right: 1px solid var(--ollama-line);
+    background: var(--ollama-canvas) !important;
+    color: var(--ollama-charcoal) !important;
+}
+
+.portal-page.role-admin .brand,
+.portal-page.role-program_head .brand,
+.portal-page.role-faculty .brand {
+    color: var(--ollama-ink) !important;
+}
+
+.portal-page.role-admin .brand small,
+.portal-page.role-program_head .brand small,
+.portal-page.role-faculty .brand small,
+.portal-page.role-admin .nav-label,
+.portal-page.role-program_head .nav-label,
+.portal-page.role-faculty .nav-label,
+.portal-page.role-admin .topbar small,
+.portal-page.role-program_head .topbar small,
+.portal-page.role-faculty .topbar small,
+.portal-page.role-admin .profile small,
+.portal-page.role-program_head .profile small,
+.portal-page.role-faculty .profile small {
+    color: var(--ollama-body) !important;
+}
+
+.portal-page.role-admin .brand-logo,
+.portal-page.role-program_head .brand-logo,
+.portal-page.role-faculty .brand-logo {
+    border: 1px solid var(--ollama-line);
+    border-radius: 12px;
+    background: var(--ollama-soft) !important;
+}
+
+.portal-page.role-admin .brand-logo svg,
+.portal-page.role-program_head .brand-logo svg,
+.portal-page.role-faculty .brand-logo svg {
+    stroke: var(--ollama-ink) !important;
+}
+
+.portal-page.role-admin .nav-link,
+.portal-page.role-program_head .nav-link,
+.portal-page.role-faculty .nav-link,
+.portal-page.role-admin .nav-group summary,
+.portal-page.role-program_head .nav-group summary,
+.portal-page.role-faculty .nav-group summary,
+.portal-page.role-admin .sub-link,
+.portal-page.role-program_head .sub-link,
+.portal-page.role-faculty .sub-link {
+    border-radius: 9999px !important;
+    color: var(--ollama-charcoal) !important;
+    font-size: 13px;
+}
+
+.portal-page.role-admin .nav-link:hover,
+.portal-page.role-program_head .nav-link:hover,
+.portal-page.role-faculty .nav-link:hover,
+.portal-page.role-admin .nav-group summary:hover,
+.portal-page.role-program_head .nav-group summary:hover,
+.portal-page.role-faculty .nav-group summary:hover,
+.portal-page.role-admin .sub-link:hover,
+.portal-page.role-program_head .sub-link:hover,
+.portal-page.role-faculty .sub-link:hover {
+    background: var(--ollama-soft) !important;
+    color: var(--ollama-ink) !important;
+}
+
+.portal-page.role-admin .nav-link.active,
+.portal-page.role-program_head .nav-link.active,
+.portal-page.role-faculty .nav-link.active,
+.portal-page.role-admin .nav-group[open] summary,
+.portal-page.role-program_head .nav-group[open] summary,
+.portal-page.role-faculty .nav-group[open] summary {
+    background: var(--ollama-ink) !important;
+    color: #ffffff !important;
+}
+
+.portal-page.role-admin .main,
+.portal-page.role-program_head .main,
+.portal-page.role-faculty .main,
+.portal-page.role-admin .topbar,
+.portal-page.role-program_head .topbar,
+.portal-page.role-faculty .topbar,
+.portal-page.role-admin .content,
+.portal-page.role-program_head .content,
+.portal-page.role-faculty .content {
+    background: var(--ollama-canvas) !important;
+}
+
+.portal-page.role-admin .topbar,
+.portal-page.role-program_head .topbar,
+.portal-page.role-faculty .topbar {
+    min-height: 72px;
+    border-bottom: 1px solid var(--ollama-line);
+}
+
+.portal-page.role-admin .content,
+.portal-page.role-program_head .content,
+.portal-page.role-faculty .content {
+    width: 100%;
+    max-width: 1500px;
+    margin-inline: auto;
+    padding: 32px clamp(18px, 4vw, 48px);
+}
+
+.portal-page.role-admin .page-title h1,
+.portal-page.role-program_head .page-title h1,
+.portal-page.role-faculty .page-title h1,
+.portal-page.role-admin .faculty-section-heading h2,
+.portal-page.role-program_head .faculty-section-heading h2,
+.portal-page.role-faculty .faculty-section-heading h2,
+.portal-page.role-admin .faculty-person h2,
+.portal-page.role-program_head .faculty-person h2,
+.portal-page.role-faculty .faculty-person h2,
+.portal-page.role-admin .faculty-empty-state h2,
+.portal-page.role-program_head .faculty-empty-state h2,
+.portal-page.role-faculty .faculty-empty-state h2 {
+    color: var(--ollama-ink);
+    font-family: "SF Pro Rounded", ui-rounded, system-ui, sans-serif !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+}
+
+.portal-page.role-admin .page-title h1,
+.portal-page.role-program_head .page-title h1,
+.portal-page.role-faculty .page-title h1 {
+    margin: 0 0 6px;
+    font-size: clamp(26px, 3vw, 36px);
+    line-height: 1.2;
+}
+
+.portal-page.role-admin .page-title p,
+.portal-page.role-program_head .page-title p,
+.portal-page.role-faculty .page-title p,
+.portal-page.role-admin .faculty-section-heading p,
+.portal-page.role-program_head .faculty-section-heading p,
+.portal-page.role-faculty .faculty-section-heading p,
+.portal-page.role-admin .faculty-no-assignments,
+.portal-page.role-program_head .faculty-no-assignments,
+.portal-page.role-faculty .faculty-no-assignments,
+.portal-page.role-admin .faculty-empty-state p,
+.portal-page.role-program_head .faculty-empty-state p,
+.portal-page.role-faculty .faculty-empty-state p,
+.portal-page.role-admin .faculty-muted,
+.portal-page.role-program_head .faculty-muted,
+.portal-page.role-faculty .faculty-muted {
+    color: var(--ollama-body);
+    font-family: inherit !important;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.portal-page.role-admin .panel,
+.portal-page.role-program_head .panel,
+.portal-page.role-faculty .panel,
+.portal-page.role-admin .filters,
+.portal-page.role-program_head .filters,
+.portal-page.role-faculty .filters,
+.portal-page.role-admin .table-container,
+.portal-page.role-program_head .table-container,
+.portal-page.role-faculty .table-container,
+.portal-page.role-admin .statistics article,
+.portal-page.role-program_head .statistics article,
+.portal-page.role-faculty .statistics article,
+.portal-page.role-admin .quick-link,
+.portal-page.role-program_head .quick-link,
+.portal-page.role-faculty .quick-link {
+    border: 1px solid var(--ollama-line) !important;
+    border-radius: 12px !important;
+    background: var(--ollama-canvas) !important;
+    box-shadow: none !important;
+}
+
+.portal-page.role-admin .panel,
+.portal-page.role-program_head .panel,
+.portal-page.role-faculty .panel,
+.portal-page.role-admin .statistics article,
+.portal-page.role-program_head .statistics article,
+.portal-page.role-faculty .statistics article {
+    padding: 20px;
+}
+
+.portal-page.role-admin .button,
+.portal-page.role-program_head .button,
+.portal-page.role-faculty .button,
+.portal-page.role-admin button.button,
+.portal-page.role-program_head button.button,
+.portal-page.role-faculty button.button,
+.portal-page.role-admin .filters button,
+.portal-page.role-program_head .filters button,
+.portal-page.role-faculty .filters button,
+.portal-page.role-admin .pagination a,
+.portal-page.role-program_head .pagination a,
+.portal-page.role-faculty .pagination a,
+.portal-page.role-admin .pagination button,
+.portal-page.role-program_head .pagination button,
+.portal-page.role-faculty .pagination button,
+.portal-page.role-admin .primary-button,
+.portal-page.role-program_head .primary-button,
+.portal-page.role-faculty .primary-button,
+.portal-page.role-admin .danger-button,
+.portal-page.role-program_head .danger-button,
+.portal-page.role-faculty .danger-button {
+    min-height: 40px;
+    border-radius: 9999px !important;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.portal-page.role-admin .button.primary,
+.portal-page.role-program_head .button.primary,
+.portal-page.role-faculty .button.primary,
+.portal-page.role-admin button.button.primary,
+.portal-page.role-program_head button.button.primary,
+.portal-page.role-faculty button.button.primary,
+.portal-page.role-admin .primary-button,
+.portal-page.role-program_head .primary-button,
+.portal-page.role-faculty .primary-button {
+    border: 1px solid var(--ollama-ink);
+    background: var(--ollama-ink);
+    color: #ffffff;
+}
+
+.portal-page.role-admin .button:not(.primary),
+.portal-page.role-program_head .button:not(.primary),
+.portal-page.role-faculty .button:not(.primary),
+.portal-page.role-admin .faculty-remove,
+.portal-page.role-program_head .faculty-remove,
+.portal-page.role-faculty .faculty-remove {
+    border: 1px solid var(--ollama-line-strong);
+    border-radius: 9999px;
+    background: var(--ollama-canvas);
+    color: var(--ollama-ink);
+}
+
+.portal-page.role-admin input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-program_head input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-faculty input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-admin select,
+.portal-page.role-program_head select,
+.portal-page.role-faculty select {
+    min-height: 40px;
+    border: 1px solid var(--ollama-line);
+    border-radius: 9999px;
+    background: var(--ollama-canvas);
+    color: var(--ollama-ink);
+}
+
+.portal-page.role-admin textarea,
+.portal-page.role-program_head textarea,
+.portal-page.role-faculty textarea {
+    border: 1px solid var(--ollama-line);
+    border-radius: 12px;
+    background: var(--ollama-canvas);
+    color: var(--ollama-ink);
+}
+
+.portal-page.role-admin input:focus,
+.portal-page.role-program_head input:focus,
+.portal-page.role-faculty input:focus,
+.portal-page.role-admin select:focus,
+.portal-page.role-program_head select:focus,
+.portal-page.role-faculty select:focus,
+.portal-page.role-admin textarea:focus,
+.portal-page.role-program_head textarea:focus,
+.portal-page.role-faculty textarea:focus,
+.portal-page.role-admin button:focus-visible,
+.portal-page.role-program_head button:focus-visible,
+.portal-page.role-faculty button:focus-visible,
+.portal-page.role-admin a:focus-visible,
+.portal-page.role-program_head a:focus-visible,
+.portal-page.role-faculty a:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.5);
+    outline-offset: 2px;
+}
+
+.portal-page.role-admin .header-search,
+.portal-page.role-program_head .header-search,
+.portal-page.role-faculty .header-search {
+    width: min(360px, 34vw);
+    min-height: 40px;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background: var(--ollama-soft);
+    color: var(--ollama-body);
+}
+
+.portal-page.role-admin .header-search input,
+.portal-page.role-program_head .header-search input,
+.portal-page.role-faculty .header-search input {
+    min-height: 36px;
+    border: 0 !important;
+    border-radius: 9999px !important;
+    background: transparent !important;
+}
+
+.portal-page.role-admin .header-search:focus-within,
+.portal-page.role-program_head .header-search:focus-within,
+.portal-page.role-faculty .header-search:focus-within {
+    border-color: var(--ollama-line);
+    background: var(--ollama-canvas);
+}
+
+.portal-page.role-admin .header-icon,
+.portal-page.role-program_head .header-icon,
+.portal-page.role-faculty .header-icon {
+    border: 1px solid var(--ollama-line);
+    border-radius: 9999px;
+    background: var(--ollama-canvas);
+    color: var(--ollama-ink);
+}
+
+.portal-page.role-admin th,
+.portal-page.role-program_head th,
+.portal-page.role-faculty th {
+    background: var(--ollama-soft);
+    color: var(--ollama-charcoal);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.portal-page.role-admin th,
+.portal-page.role-program_head th,
+.portal-page.role-faculty th,
+.portal-page.role-admin td,
+.portal-page.role-program_head td,
+.portal-page.role-faculty td {
+    border-color: var(--ollama-line);
+}
+
+.portal-page.role-admin .faculty-management .page-title,
+.portal-page.role-program_head .faculty-management .page-title,
+.portal-page.role-faculty .faculty-management .page-title {
+    margin-bottom: 24px;
+}
+
+.portal-page.role-admin .faculty-add-panel,
+.portal-page.role-program_head .faculty-add-panel,
+.portal-page.role-faculty .faculty-add-panel {
+    margin-bottom: 24px;
+}
+
+.portal-page.role-admin .faculty-section-heading h2,
+.portal-page.role-program_head .faculty-section-heading h2,
+.portal-page.role-faculty .faculty-section-heading h2 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    line-height: 1.33;
+}
+
+.portal-page.role-admin .faculty-section-heading p,
+.portal-page.role-program_head .faculty-section-heading p,
+.portal-page.role-faculty .faculty-section-heading p {
+    margin: 0;
+}
+
+.portal-page.role-admin .faculty-eyebrow,
+.portal-page.role-program_head .faculty-eyebrow,
+.portal-page.role-faculty .faculty-eyebrow {
+    color: var(--ollama-body);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+}
+
+.portal-page.role-admin .faculty-person h2,
+.portal-page.role-program_head .faculty-person h2,
+.portal-page.role-faculty .faculty-person h2 {
+    margin: 0 0 4px;
+    font-size: 20px;
+}
+
+.portal-page.role-admin .faculty-person a,
+.portal-page.role-program_head .faculty-person a,
+.portal-page.role-faculty .faculty-person a {
+    color: var(--ollama-body) !important;
+    font-size: 13px;
+    text-decoration: underline;
+    text-decoration-color: var(--ollama-line-strong);
+}
+
+.portal-page.role-admin .faculty-record-header,
+.portal-page.role-program_head .faculty-record-header,
+.portal-page.role-faculty .faculty-record-header {
+    padding: 18px 0;
+}
+
+.portal-page.role-admin .faculty-record-summary,
+.portal-page.role-program_head .faculty-record-summary,
+.portal-page.role-faculty .faculty-record-summary {
+    border-top: 1px solid var(--ollama-line);
+    color: var(--ollama-body);
+}
+
+.portal-page.role-admin .faculty-load-table,
+.portal-page.role-program_head .faculty-load-table,
+.portal-page.role-faculty .faculty-load-table {
+    border-top: 1px solid var(--ollama-line);
+}
+
+.portal-page.role-admin .faculty-load-table td small,
+.portal-page.role-program_head .faculty-load-table td small,
+.portal-page.role-faculty .faculty-load-table td small {
+    color: var(--ollama-body);
+}
+
+.portal-page.role-admin .faculty-assignment-count,
+.portal-page.role-program_head .faculty-assignment-count,
+.portal-page.role-faculty .faculty-assignment-count,
+.portal-page.role-admin .faculty-result-count,
+.portal-page.role-program_head .faculty-result-count,
+.portal-page.role-faculty .faculty-result-count {
+    color: var(--ollama-body);
+}
+
+@media (max-width: 900px) {
+    .portal-page.role-admin .shell,
+    .portal-page.role-program_head .shell,
+    .portal-page.role-faculty .shell {
+        grid-template-columns: 196px minmax(0, 1fr);
+    }
+
+    .portal-page.role-admin .header-search,
+    .portal-page.role-program_head .header-search,
+    .portal-page.role-faculty .header-search {
+        width: min(300px, 30vw);
+    }
+}
+
+@media (max-width: 767px) {
+    .portal-page.role-admin .shell,
+    .portal-page.role-program_head .shell,
+    .portal-page.role-faculty .shell {
+        display: block;
+    }
+
+    .portal-page.role-admin .sidebar,
+    .portal-page.role-program_head .sidebar,
+    .portal-page.role-faculty .sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--ollama-line);
+    }
+
+    .portal-page.role-admin .sidebar nav,
+    .portal-page.role-program_head .sidebar nav,
+    .portal-page.role-faculty .sidebar nav {
+        display: flex;
+        gap: 4px;
+        overflow-x: auto;
+    }
+
+    .portal-page.role-admin .topbar,
+    .portal-page.role-program_head .topbar,
+    .portal-page.role-faculty .topbar {
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        padding: 12px 16px;
+    }
+
+    .portal-page.role-admin .header-search,
+    .portal-page.role-program_head .header-search,
+    .portal-page.role-faculty .header-search {
+        order: 3;
+        width: 100%;
+    }
+
+    .portal-page.role-admin .faculty-add-form,
+    .portal-page.role-program_head .faculty-add-form,
+    .portal-page.role-faculty .faculty-add-form {
+        grid-template-columns: 1fr;
+    }
+
+    .portal-page.role-admin .faculty-record-header,
+    .portal-page.role-program_head .faculty-record-header,
+    .portal-page.role-faculty .faculty-record-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .portal-page.role-admin .faculty-record-actions,
+    .portal-page.role-program_head .faculty-record-actions,
+    .portal-page.role-faculty .faculty-record-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+.enroll-page { display: grid; gap: 22px; max-width: 1120px; margin-inline: auto; }
+.enroll-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.enroll-header h1 { margin: 5px 0 7px; font-size: clamp(28px, 4vw, 38px); font-weight: 650; }
+.enroll-header p, .enroll-panel-heading p { margin: 0; color: var(--portal-muted, #667085); }
+.enroll-eyebrow { color: var(--portal-muted, #667085); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.enroll-back, .enroll-cancel { color: var(--portal-ink, #111827); font-weight: 650; text-decoration: none; }
+.enroll-back:hover, .enroll-cancel:hover { text-decoration: underline; }
+.enroll-student-card { display: grid; grid-template-columns: auto minmax(180px, 1.3fr) repeat(2, minmax(130px, 1fr)); align-items: center; gap: 20px; padding: 18px 20px; border: 1px solid var(--portal-border, #e4e7ec); border-radius: 14px; background: var(--portal-surface, #fff); }
+.enroll-student-card > div:not(.enroll-avatar) { display: grid; gap: 4px; }
+.enroll-student-card span { color: var(--portal-muted, #667085); font-size: 12px; }
+.enroll-avatar { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 50%; background: #111827; color: #fff; font-weight: 700; }
+.enroll-errors { padding: 16px 18px; border-radius: 12px; }
+.enroll-page form { display: grid; gap: 18px; }
+.enroll-panel { padding: 22px; border: 1px solid var(--portal-border, #e4e7ec); border-radius: 14px; background: var(--portal-surface, #fff); }
+.enroll-panel-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
+.enroll-panel-heading h2 { margin: 0 0 3px; font-size: 18px; }
+.enroll-step { display: grid; flex: 0 0 32px; height: 32px; place-items: center; border-radius: 50%; background: #111827; color: #fff; font-weight: 700; }
+.enroll-count { margin-left: auto; padding: 6px 9px; border-radius: 999px; background: var(--portal-surface-muted, #f4f6f8); color: var(--portal-muted, #667085); font-size: 12px; }
+.enroll-field { display: grid; max-width: 420px; gap: 7px; font-weight: 650; }
+.enroll-field select { width: 100%; padding: 10px 12px; border: 1px solid var(--portal-border, #e4e7ec); }
+.enroll-subjects { display: grid; gap: 10px; }
+.enroll-subject { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 13px; padding: 16px; border: 1px solid var(--portal-border, #e4e7ec); border-radius: 12px; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.enroll-subject:hover { border-color: #98a2b3; background: var(--portal-surface-muted, #f8fafc); }
+.enroll-subject input { position: absolute; opacity: 0; pointer-events: none; }
+.enroll-check { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid #98a2b3; border-radius: 6px; color: transparent; font-size: 12px; }
+.enroll-subject input:checked + .enroll-check { border-color: #111827; background: #111827; color: #fff; }
+.enroll-subject input:focus-visible + .enroll-check { outline: 3px solid rgba(59, 130, 246, .35); outline-offset: 2px; }
+.enroll-subject-copy, .enroll-subject-title { display: grid; gap: 4px; }
+.enroll-subject-title { grid-template-columns: minmax(72px, auto) 1fr; align-items: baseline; }
+.enroll-subject-copy small { color: var(--portal-muted, #667085); line-height: 1.45; }
+.enroll-empty { padding: 28px; border-radius: 12px; background: var(--portal-surface-muted, #f4f6f8); color: var(--portal-muted, #667085); text-align: center; }
+.enroll-actions { display: flex; align-items: center; justify-content: flex-end; gap: 18px; }
+@media (max-width: 720px) { .enroll-header { flex-direction: column; } .enroll-student-card { grid-template-columns: auto 1fr; } .enroll-student-card > div:nth-child(n+3) { grid-column: 2; } .enroll-panel { padding: 18px; } .enroll-count { display: none; } .enroll-subject-title { grid-template-columns: 1fr; } }
+
+/* Unified portal design contract: mirrored by the React staff portal. */
+.portal-page.role-admin,
+.portal-page.role-program_head,
+.portal-page.role-faculty {
+    --portal-canvas: #f8fafc;
+    --portal-surface: #ffffff;
+    --portal-surface-muted: #f4f6f8;
+    --portal-ink: #111827;
+    --portal-muted: #667085;
+    --portal-border: #e4e7ec;
+    --portal-accent: #111827;
+    --portal-focus: rgba(59, 130, 246, .45);
+    --portal-danger: #b42318;
+    --portal-radius: 12px;
+    --portal-sidebar: 232px;
+    --portal-header: 64px;
+    background: var(--portal-canvas) !important;
+    color: var(--portal-ink) !important;
+    font-family: Inter, "Instrument Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
+.portal-page.role-admin .shell,
+.portal-page.role-program_head .shell,
+.portal-page.role-faculty .shell {
+    grid-template-columns: var(--portal-sidebar) minmax(0, 1fr);
+    background: var(--portal-canvas) !important;
+}
+
+.portal-page.role-admin .sidebar,
+.portal-page.role-program_head .sidebar,
+.portal-page.role-faculty .sidebar,
+.portal-page.role-admin .topbar,
+.portal-page.role-program_head .topbar,
+.portal-page.role-faculty .topbar {
+    background: color-mix(in srgb, var(--portal-surface) 94%, transparent) !important;
+    border-color: var(--portal-border) !important;
+    color: var(--portal-ink) !important;
+    backdrop-filter: blur(14px);
+}
+
+.portal-page.role-admin .sidebar,
+.portal-page.role-program_head .sidebar,
+.portal-page.role-faculty .sidebar {
+    width: var(--portal-sidebar);
+    padding: 24px 16px;
+}
+
+.portal-page.role-admin .topbar,
+.portal-page.role-program_head .topbar,
+.portal-page.role-faculty .topbar {
+    min-height: var(--portal-header);
+    height: var(--portal-header);
+    padding-inline: 28px;
+}
+
+.portal-page.role-admin .content,
+.portal-page.role-program_head .content,
+.portal-page.role-faculty .content {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding: 32px;
+    background: var(--portal-canvas) !important;
+}
+
+.portal-page.role-admin .brand,
+.portal-page.role-program_head .brand,
+.portal-page.role-faculty .brand,
+.portal-page.role-admin h1,
+.portal-page.role-program_head h1,
+.portal-page.role-faculty h1,
+.portal-page.role-admin h2,
+.portal-page.role-program_head h2,
+.portal-page.role-faculty h2,
+.portal-page.role-admin h3,
+.portal-page.role-program_head h3,
+.portal-page.role-faculty h3 {
+    color: var(--portal-ink) !important;
+    font-family: inherit !important;
+    letter-spacing: -.015em !important;
+}
+
+.portal-page.role-admin .page-title h1,
+.portal-page.role-program_head .page-title h1,
+.portal-page.role-faculty .page-title h1 {
+    font-size: clamp(26px, 3vw, 32px);
+    font-weight: 650 !important;
+}
+
+.portal-page.role-admin .panel,
+.portal-page.role-program_head .panel,
+.portal-page.role-faculty .panel,
+.portal-page.role-admin .filters,
+.portal-page.role-program_head .filters,
+.portal-page.role-faculty .filters,
+.portal-page.role-admin .table-container,
+.portal-page.role-program_head .table-container,
+.portal-page.role-faculty .table-container,
+.portal-page.role-admin .statistics article,
+.portal-page.role-program_head .statistics article,
+.portal-page.role-faculty .statistics article,
+.portal-page.role-admin .quick-link,
+.portal-page.role-program_head .quick-link,
+.portal-page.role-faculty .quick-link {
+    border: 1px solid var(--portal-border) !important;
+    border-radius: var(--portal-radius) !important;
+    background: var(--portal-surface) !important;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .035) !important;
+}
+
+.portal-page.role-admin .nav-link,
+.portal-page.role-program_head .nav-link,
+.portal-page.role-faculty .nav-link,
+.portal-page.role-admin .nav-group summary,
+.portal-page.role-program_head .nav-group summary,
+.portal-page.role-faculty .nav-group summary {
+    min-height: 40px;
+    border-radius: 10px !important;
+    color: var(--portal-muted) !important;
+    font-weight: 550;
+}
+
+.portal-page.role-admin .nav-link:hover,
+.portal-page.role-program_head .nav-link:hover,
+.portal-page.role-faculty .nav-link:hover,
+.portal-page.role-admin .nav-group summary:hover,
+.portal-page.role-program_head .nav-group summary:hover,
+.portal-page.role-faculty .nav-group summary:hover {
+    background: var(--portal-surface-muted) !important;
+    color: var(--portal-ink) !important;
+}
+
+.portal-page.role-admin .nav-link.active,
+.portal-page.role-program_head .nav-link.active,
+.portal-page.role-faculty .nav-link.active,
+.portal-page.role-admin .nav-group[open] summary,
+.portal-page.role-program_head .nav-group[open] summary,
+.portal-page.role-faculty .nav-group[open] summary {
+    background: var(--portal-accent) !important;
+    color: var(--portal-surface) !important;
+}
+
+.portal-page.role-admin .button,
+.portal-page.role-program_head .button,
+.portal-page.role-faculty .button,
+.portal-page.role-admin button,
+.portal-page.role-program_head button,
+.portal-page.role-faculty button,
+.portal-page.role-admin input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-program_head input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-faculty input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-admin select,
+.portal-page.role-program_head select,
+.portal-page.role-faculty select {
+    min-height: 40px;
+    border-radius: 10px !important;
+}
+
+.portal-page.role-admin input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-program_head input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-faculty input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.portal-page.role-admin select,
+.portal-page.role-program_head select,
+.portal-page.role-faculty select,
+.portal-page.role-admin textarea,
+.portal-page.role-program_head textarea,
+.portal-page.role-faculty textarea {
+    border-color: var(--portal-border) !important;
+    background: var(--portal-surface) !important;
+    color: var(--portal-ink) !important;
+}
+
+.portal-page.role-admin th,
+.portal-page.role-program_head th,
+.portal-page.role-faculty th {
+    height: 44px;
+    background: var(--portal-surface-muted) !important;
+    color: var(--portal-muted) !important;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.portal-page.role-admin td,
+.portal-page.role-program_head td,
+.portal-page.role-faculty td {
+    height: 52px;
+    border-color: var(--portal-border) !important;
+}
+
+.portal-page.role-admin tbody tr:hover,
+.portal-page.role-program_head tbody tr:hover,
+.portal-page.role-faculty tbody tr:hover {
+    background: var(--portal-surface-muted);
+}
+
+@media (max-width: 767px) {
+    .portal-page.role-admin .shell,
+    .portal-page.role-program_head .shell,
+    .portal-page.role-faculty .shell { display: block; }
+    .portal-page.role-admin .sidebar,
+    .portal-page.role-program_head .sidebar,
+    .portal-page.role-faculty .sidebar { position: fixed; width: var(--portal-sidebar); height: 100vh; }
+    .portal-page.role-admin .content,
+    .portal-page.role-program_head .content,
+    .portal-page.role-faculty .content { padding: 24px 16px; }
+}

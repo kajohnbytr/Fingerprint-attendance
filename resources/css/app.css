@@ -293,3 +293,50 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Consistent feedback for legacy Laravel portal buttons. */
+:where(button, .button, .primary-button, .secondary-button, .danger-button) {
+    cursor: pointer;
+    transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease,
+        box-shadow 160ms ease, transform 120ms ease, opacity 160ms ease;
+}
+
+:where(.button, .primary-button, .secondary-button, .danger-button, button[type="submit"], button[type="reset"]) {
+    min-height: 42px;
+    font-weight: 600;
+}
+
+:where(button, .button, .primary-button, .secondary-button, .danger-button):focus-visible {
+    outline: 3px solid rgb(37 99 235 / 28%);
+    outline-offset: 3px;
+}
+
+:where(button, .button, .primary-button, .secondary-button, .danger-button):active:not(:disabled, [aria-disabled="true"]) {
+    box-shadow: none;
+    transform: translateY(1px) scale(.985);
+}
+
+:where(button, .button, .primary-button, .secondary-button, .danger-button):is(:disabled, [aria-disabled="true"]) {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    :where(button, .button, .primary-button, .secondary-button, .danger-button):hover:not(:disabled, [aria-disabled="true"]) {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px rgb(15 23 42 / 14%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :where(button, .button, .primary-button, .secondary-button, .danger-button) {
+        transition-duration: .01ms;
+    }
+}
+
+/* Match the typography used by the ESP8266 captive portal. */
+body[data-page],
+body[data-page] * {
+    font-family: "SF Pro Rounded", "Segoe UI", Arial, sans-serif !important;
+}

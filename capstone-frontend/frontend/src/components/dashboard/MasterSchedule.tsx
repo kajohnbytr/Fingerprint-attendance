@@ -13,6 +13,16 @@ import {
   TableRow,
 } from '../ui/table';
 import { apiFetch } from '../../api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 
 type Entry = {
   id: string;
@@ -43,6 +53,7 @@ export function MasterSchedule() {
   const [syncing, setSyncing] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -115,13 +126,13 @@ export function MasterSchedule() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this row and re-sync student schedules for that block?')) return;
     try {
       const res = await apiFetch(`/api/admin/master-schedule/${id}`, {
         method: 'DELETE',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Delete failed');
+      setPendingDelete(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed');
@@ -292,7 +303,7 @@ export function MasterSchedule() {
                         variant="ghost"
                         size="icon"
                         className="text-red-600 hover:text-red-700"
-                        onClick={() => handleDelete(row.id)}
+                        onClick={() => setPendingDelete(row.id)}
                         aria-label="Delete row"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -305,6 +316,22 @@ export function MasterSchedule() {
           )}
         </CardContent>
       </Card>
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this schedule row?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the official class entry and requires student schedules for that block to be synchronized again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => pendingDelete && handleDelete(pendingDelete)}>
+              Delete row
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

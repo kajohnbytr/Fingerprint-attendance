@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Security\PasswordPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,46 @@ use Illuminate\Validation\Rule;
 
 class SuperAdminController extends Controller
 {
+    public function settings(): JsonResponse
+    {
+        return response()->json(['settings' => $this->settingsRow()]);
+    }
+
+    public function updateSettings(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'schoolName' => ['required', 'string', 'max:150'],
+            'attendanceRequired' => ['required', 'integer', 'between:1,100'],
+            'proxyDetection' => ['required', 'boolean'],
+            'requireAdminMfa' => ['required', 'boolean'],
+            'systemLockdown' => ['required', 'boolean'],
+            'sessionTimeoutMinutes' => ['required', 'integer', 'between:5,1440'],
+            'passwordExpiryDays' => ['required', 'integer', 'between:0,365'],
+            'lowAttendanceAlerts' => ['required', 'boolean'],
+            'systemHealthReports' => ['required', 'boolean'],
+        ]);
+
+        DB::table('super_admin_settings')->updateOrInsert(['id' => 1], [
+            'school_name' => $data['schoolName'],
+            'attendance_required' => $data['attendanceRequired'],
+            'proxy_detection' => $data['proxyDetection'],
+            'require_admin_mfa' => $data['requireAdminMfa'],
+            'system_lockdown' => $data['systemLockdown'],
+            'session_timeout_minutes' => $data['sessionTimeoutMinutes'],
+            'password_expiry_days' => $data['passwordExpiryDays'],
+            'low_attendance_alerts' => $data['lowAttendanceAlerts'],
+            'system_health_reports' => $data['systemHealthReports'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->audit($request, 'School settings updated', 'Updated school, attendance, security, and notification settings.');
+
+        return response()->json([
+            'message' => 'School portal settings saved.',
+            'settings' => $this->settingsRow(),
+        ]);
+    }
+
     public function masterSchedule(Request $request): JsonResponse
     {
         $entries = DB::table('master_schedule_entries')
@@ -61,11 +102,24 @@ class SuperAdminController extends Controller
 
     public function users(Request $request): JsonResponse
     {
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'role' => ['nullable', Rule::in(['student', 'admin', 'program_head', 'super_admin'])],
+            'status' => ['nullable', Rule::in(['active', 'inactive'])],
+        ]);
+
         $users = User::query()->with(['assignedSubjects.enrollments.block', 'student'])
-            ->when($request->string('search')->isNotEmpty(), function ($query) use ($request): void {
-                $search = '%'.$request->string('search').'%';
+            ->when(filled($filters['search'] ?? null), function ($query) use ($filters): void {
+                $search = '%'.$filters['search'].'%';
                 $query->where(fn ($query) => $query->where('name', 'like', $search)->orWhere('email', 'like', $search));
-            })->orderBy('name')->get()->map(fn (User $user): array => $this->userRow($user));
+            })
+            ->when(filled($filters['role'] ?? null), function ($query) use ($filters): void {
+                $query->where('role', $filters['role'] === 'admin' ? 'faculty' : $filters['role']);
+            })
+            ->when(filled($filters['status'] ?? null), function ($query) use ($filters): void {
+                $query->where('is_active', $filters['status'] === 'active');
+            })
+            ->orderBy('name')->get()->map(fn (User $user): array => $this->userRow($user));
 
         return response()->json(['users' => $users]);
     }
@@ -96,25 +150,19 @@ class SuperAdminController extends Controller
         return response()->json(['user' => $this->userRow($user->fresh())]);
     }
 
-    public function scheduleChangeRequests(): JsonResponse
+    public function updateUserStatus(Request $request, User $user): JsonResponse
     {
-        $requests = DB::table('schedule_change_requests')->latest()->get()->map(fn (object $row): array => [
-            'id' => (string) $row->id, 'studentName' => $row->student_name, 'block' => $row->block,
-            'courseName' => $row->course_name, 'currentSchedule' => $row->current_schedule, 'currentRoom' => $row->current_room,
-            'requestedSchedule' => $row->requested_schedule, 'requestedRoom' => $row->requested_room,
-            'status' => $row->status, 'createdAt' => $row->created_at,
+        $data = $request->validate(['isActive' => ['required', 'boolean']]);
+        abort_if($request->user()->is($user) && ! $data['isActive'], 422, 'You cannot archive your own account.');
+
+        $user->update(['is_active' => $data['isActive']]);
+        $action = $data['isActive'] ? 'User reactivated' : 'User archived';
+        $this->audit($request, $action, $action.' account '.$user->email.'.');
+
+        return response()->json([
+            'message' => $data['isActive'] ? 'User reactivated.' : 'User archived.',
+            'user' => $this->userRow($user->fresh()),
         ]);
-
-        return response()->json(['requests' => $requests]);
-    }
-
-    public function updateScheduleChangeRequest(Request $request, int $changeRequest): JsonResponse
-    {
-        $data = $request->validate(['status' => ['required', Rule::in(['approved', 'rejected'])], 'adminNote' => ['nullable', 'string', 'max:2000']]);
-        abort_unless(DB::table('schedule_change_requests')->where('id', $changeRequest)->update(['status' => $data['status'], 'admin_note' => $data['adminNote'] ?? null, 'updated_at' => now()]) > 0, 404, 'Request not found.');
-        $this->audit($request, 'Schedule request reviewed', 'Marked request '.$changeRequest.' as '.$data['status'].'.');
-
-        return response()->json(['message' => 'Schedule change request updated.']);
     }
 
     public function auditLogs(Request $request): JsonResponse
@@ -157,6 +205,24 @@ class SuperAdminController extends Controller
         DB::table('audit_logs')->insert(['user_id' => $request->user()->id, 'action' => $action, 'details' => $details, 'status' => 'Success', 'created_at' => now(), 'updated_at' => now()]);
     }
 
+    /** @return array<string, bool|int|string> */
+    private function settingsRow(): array
+    {
+        $row = DB::table('super_admin_settings')->where('id', 1)->first();
+
+        return [
+            'schoolName' => $row?->school_name ?? 'University Attendance Portal',
+            'attendanceRequired' => (int) ($row?->attendance_required ?? 75),
+            'proxyDetection' => (bool) ($row?->proxy_detection ?? true),
+            'requireAdminMfa' => (bool) ($row?->require_admin_mfa ?? false),
+            'systemLockdown' => (bool) ($row?->system_lockdown ?? false),
+            'sessionTimeoutMinutes' => (int) ($row?->session_timeout_minutes ?? 30),
+            'passwordExpiryDays' => (int) ($row?->password_expiry_days ?? 90),
+            'lowAttendanceAlerts' => (bool) ($row?->low_attendance_alerts ?? true),
+            'systemHealthReports' => (bool) ($row?->system_health_reports ?? true),
+        ];
+    }
+
     private function userRow(User $user): array
     {
         $role = $user->role === 'faculty' ? 'admin' : $user->role;
@@ -173,7 +239,7 @@ class SuperAdminController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($ignoreId)],
-            'password' => [$passwordRequired ? 'required' : 'nullable', 'string', 'min:8'],
+            'password' => PasswordPolicy::baseRules($passwordRequired),
             'role' => ['required', Rule::in(['student', 'admin', 'program_head', 'super_admin'])],
             'handledBlocks' => ['nullable', 'array'], 'handledBlocks.*' => ['string', 'max:50'],
         ]);

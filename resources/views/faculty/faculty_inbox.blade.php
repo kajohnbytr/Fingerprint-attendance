@@ -17,7 +17,7 @@
             </form>
         </details>
         @forelse($announcements as $announcement)
-            <article class="faculty-message"><strong>{{ $announcement->title }}</strong><small>{{ $announcement->subject_code ?? 'Campus-wide' }} · {{ $announcement->author_name }} · {{ \Carbon\Carbon::parse($announcement->published_at)->format('M j, Y g:i A') }}</small><p>{{ $announcement->body }}</p></article>
+            <article class="faculty-message" id="announcement-{{ $announcement->id }}"><strong>{{ $announcement->title }}</strong><small>{{ $announcement->subject_code ?? 'Campus-wide' }} · {{ $announcement->author_name }} · Updated {{ \Carbon\Carbon::parse($announcement->updated_at ?? $announcement->published_at)->diffForHumans() }}</small><p>{{ $announcement->body }}</p></article>
         @empty
             <p class="empty">No published announcements.</p>
         @endforelse
@@ -37,7 +37,7 @@
             </form>
         </details>
         @forelse($complaints as $complaint)
-            <article class="faculty-message"><strong>{{ $complaint->title }}</strong><small>{{ $complaint->first_name }} {{ $complaint->last_name }} · {{ $complaint->student_number }} · {{ $complaint->subject_code }} · {{ \Carbon\Carbon::parse($complaint->created_at)->format('M j, Y') }}</small><p>{{ $complaint->body }}</p>
+            <article class="faculty-message" id="complaint-{{ $complaint->id }}"><strong>{{ $complaint->title }}</strong><small>{{ $complaint->first_name }} {{ $complaint->last_name }} · {{ $complaint->student_number }} · {{ $complaint->subject_code }} · {{ \Carbon\Carbon::parse($complaint->created_at)->format('M j, Y') }}</small><p>{{ $complaint->body }}</p>
                 <form class="actions" method="POST" action="{{ route('faculty.complaints.update', $complaint->id) }}">
                     @csrf @method('PATCH')
                     <label>Status <select name="status" aria-label="Status for {{ $complaint->title }}">@foreach(['open' => 'Open', 'in_review' => 'In review', 'resolved' => 'Resolved'] as $value => $label)<option value="{{ $value }}" @selected($complaint->status === $value)>{{ $label }}</option>@endforeach</select></label>

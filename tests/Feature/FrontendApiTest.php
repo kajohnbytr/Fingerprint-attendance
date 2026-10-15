@@ -75,6 +75,48 @@ class FrontendApiTest extends TestCase
             ->assertJsonPath('user.mustChangePassword', true);
     }
 
+    public function test_super_admin_can_save_and_reload_school_settings(): void
+    {
+        $superAdmin = User::factory()->create([
+            'role' => 'super_admin',
+            'must_change_password' => false,
+        ]);
+        $payload = [
+            'schoolName' => 'PHINMA University of Pangasinan',
+            'attendanceRequired' => 80,
+            'proxyDetection' => true,
+            'requireAdminMfa' => false,
+            'systemLockdown' => false,
+            'sessionTimeoutMinutes' => 45,
+            'passwordExpiryDays' => 60,
+            'lowAttendanceAlerts' => true,
+            'systemHealthReports' => false,
+        ];
+
+        $this->actingAs($superAdmin)->patchJson('/api/admin/settings', $payload)
+            ->assertOk()
+            ->assertJsonPath('settings.schoolName', 'PHINMA University of Pangasinan')
+            ->assertJsonPath('settings.sessionTimeoutMinutes', 45);
+
+        $this->getJson('/api/admin/settings')
+            ->assertOk()
+            ->assertJsonPath('settings.schoolName', 'PHINMA University of Pangasinan')
+            ->assertJsonPath('settings.systemHealthReports', false);
+
+        $this->getJson('/api/session-settings')
+            ->assertOk()
+            ->assertJsonPath('settings.timeoutMinutes', 45)
+            ->assertJsonPath('settings.warningDelaySeconds', 2580)
+            ->assertJsonPath('settings.countdownSeconds', 120);
+
+        $this->assertDatabaseHas('super_admin_settings', [
+            'id' => 1,
+            'school_name' => 'PHINMA University of Pangasinan',
+            'attendance_required' => 80,
+        ]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'School settings updated']);
+    }
+
     public function test_spa_login_rejects_inactive_accounts_and_wrong_roles(): void
     {
         $inactiveUser = User::factory()->create([
@@ -165,10 +207,10 @@ class FrontendApiTest extends TestCase
 
         $this->putJson('/api/students/password', [
             'currentPassword' => 'password',
-            'newPassword' => 'new-secure-password',
-            'confirmPassword' => 'new-secure-password',
+            'newPassword' => 'New-secure-password-2026!',
+            'confirmPassword' => 'New-secure-password-2026!',
         ])->assertOk();
-        $this->assertTrue(Hash::check('new-secure-password', $user->fresh()->password));
+        $this->assertTrue(Hash::check('New-secure-password-2026!', $user->fresh()->password));
     }
 
     public function test_student_attendance_returns_recorded_and_missed_scheduled_classes(): void

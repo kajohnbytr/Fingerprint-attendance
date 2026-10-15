@@ -45,7 +45,7 @@
 
         <tbody>
         @forelse($subjects as $subject)
-            <tr>
+            <tr id="subject-{{ $subject->id }}">
                 <td>
                     <strong>{{ $subject->code }}</strong>
                     <small>{{ $subject->description }}</small>

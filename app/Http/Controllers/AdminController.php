@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
 use App\ScheduleConflicts;
+use App\Security\PasswordPolicy;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -126,12 +127,17 @@ class AdminController extends Controller
         return $portal->export($request);
     }
 
-    public function inbox(AdminFilterRequest $request): View
+    public function inbox(Request $request): View
     {
+        abort_unless(in_array($request->user()->role, ['admin', 'program_head'], true), 403);
+        $filters = $request->validate([
+            'complaint_status' => ['nullable', Rule::in(['open', 'in_review', 'resolved'])],
+        ]);
+
         return view('admin.inbox', [
             'subjects' => Subject::orderBy('code')->get(),
             'announcements' => $this->announcements()->paginate(10, ['*'], 'announcements_page')->withQueryString(),
-            'complaints' => $this->complaints()->when($request->input('complaint_status'),
+            'complaints' => $this->complaints()->when($filters['complaint_status'] ?? null,
                 fn (QueryBuilder $query, string $status) => $query->where('student_complaints.status', $status))
                 ->paginate(10, ['*'], 'complaints_page')->withQueryString(),
         ]);
@@ -154,7 +160,7 @@ class AdminController extends Controller
             'subject_id' => ['nullable', 'integer', 'exists:subjects,id'],
         ]);
         $id = DB::table('portal_announcements')->insertGetId([
-            ...$data, 'author_id' => $request->user()->id, 'published_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+            ...$data, 'audience' => empty($data['subject_id']) ? 'all' : 'subject', 'author_id' => $request->user()->id, 'published_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         return redirect()->route('admin.announcements.show', $id)->with('success', 'Announcement published.');
@@ -217,16 +223,21 @@ class AdminController extends Controller
             if ($data['role'] !== 'faculty' && $target->assignedSubjects()->exists()) {
                 throw ValidationException::withMessages(['role' => 'Reassign this faculty member’s subjects before changing their role.']);
             }
+            $newPassword = $data['password'] ?? null;
+            unset($data['password']);
             $target->fill([...$data, 'student_id' => $data['role'] === 'student' ? $data['student_id'] : null]);
             if ($target->isDirty('email')) {
                 $target->email_verified_at = null;
             }
-            if ($target->isDirty(['password', 'role', 'is_active'])) {
+            if ($newPassword || $target->isDirty(['role', 'is_active'])) {
                 $target->remember_token = Str::random(60);
                 $target->tokens()->delete();
                 DB::table('sessions')->where('user_id', $target->id)->delete();
             }
             $target->save();
+            if ($newPassword) {
+                PasswordPolicy::change($target, $newPassword);
+            }
         });
 
         return redirect()->route('admin.users')->with('success', 'Account updated.');

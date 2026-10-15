@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import App from './App.tsx';
 import './index.css';
+import './styles/portal-contract.css';
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
@@ -13,4 +14,3 @@ createRoot(document.getElementById('root')!).render(
     </>
   </BrowserRouter>
 );
-  

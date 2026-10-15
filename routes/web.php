@@ -8,6 +8,8 @@ use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\FacultyController;
 use App\Http\Controllers\FingerprintController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\PortalUtilityController;
+use App\Http\Controllers\ProgramHeadPortalController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
@@ -19,6 +21,8 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('login.store');
+    Route::get('/mfa', [AuthController::class, 'challenge'])->name('mfa.challenge');
+    Route::post('/mfa', [AuthController::class, 'verify'])->middleware('throttle:5,1')->name('mfa.verify');
 });
 
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function (): void {
@@ -197,6 +201,29 @@ Route::middleware([
         )
             ->whereNumber('user')
             ->name('faculty.destroy');
+
+        Route::put(
+            '/subjects/{subject}/blocks/{block}/schedule',
+            [FacultyController::class, 'updateClassSchedule']
+        )
+            ->whereNumber('subject')
+            ->whereNumber('block')
+            ->name('subjects.blocks.schedule.update');
+
+        Route::put(
+            '/faculty/schedules',
+            [FacultyController::class, 'updateClassSchedules']
+        )->name('faculty.schedules.update');
+
+        Route::middleware('role:program_head')->group(function (): void {
+            Route::get('/reports', [ProgramHeadPortalController::class, 'reports'])->name('reports');
+            Route::get('/reports/export', [ProgramHeadPortalController::class, 'export'])->name('reports.export');
+            Route::get('/announcements', [ProgramHeadPortalController::class, 'announcements'])->name('announcements');
+            Route::post('/announcements', [ProgramHeadPortalController::class, 'publishAnnouncement'])->name('announcements.store');
+            Route::patch('/announcements/{announcement}/archive', [ProgramHeadPortalController::class, 'archiveAnnouncement'])->whereNumber('announcement')->name('announcements.archive');
+            Route::get('/settings', [ProgramHeadPortalController::class, 'settings'])->name('settings');
+            Route::patch('/settings', [ProgramHeadPortalController::class, 'updateSettings'])->name('settings.update');
+        });
     });
 
 Route::get(
@@ -206,10 +233,23 @@ Route::get(
     ->middleware(['auth', 'role:admin,program_head,faculty'])
     ->name('program-head.faculty-loads.index');
 
+Route::get('/program-head/inbox', [AdminController::class, 'inbox'])
+    ->middleware(['auth', 'role:program_head'])
+    ->name('program-head.inbox');
+
+Route::middleware(['auth', 'role:admin,program_head,faculty'])->prefix('portal')->name('portal.')->group(function (): void {
+    Route::get('/search', [PortalUtilityController::class, 'search'])->name('search');
+    Route::get('/notifications', [PortalUtilityController::class, 'notifications'])->name('notifications');
+});
+
 Route::middleware('auth')->group(function () {
     Route::view('/fingerprint/register', 'fingerprint-register');
 
     Route::post('/fingerprint/enroll', [FingerprintController::class, 'start']);
     Route::get('/fingerprint/enroll/{enrollment}/status',
         [FingerprintController::class, 'status']);
+});
+
+Route::fallback(function () {
+    return response()->view('errors.404', status: 404);
 });

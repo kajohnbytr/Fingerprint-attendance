@@ -23,21 +23,23 @@
 </div>
 
 <form class="filters" method="GET">
-    <input
-        name="search"
-        value="{{ request('search') }}"
-        placeholder="Search ID, name or email"
-    >
+    @if(request()->filled('search'))
+        <input type="hidden" name="search" value="{{ request('search') }}">
+        <span class="search-query-label">Search: {{ request('search') }}</span>
+    @endif
 
-    <select name="subject">
-        <option value="">All subjects</option>
+    <select name="subject_id" aria-label="Filter by enrolled subject">
+        <option value="">All enrolled subjects</option>
 
-        @foreach($subjects as $subject)
+        @foreach($enrolledSubjects as $enrolledSubject)
             <option
-                value="{{ $subject }}"
-                @selected(request('subject') === $subject)
+                value="{{ $enrolledSubject->id }}"
+                @selected(
+                    (string) request('subject_id')
+                    === (string) $enrolledSubject->id
+                )
             >
-                {{ $subject }}
+                {{ $enrolledSubject->code }} - {{ $enrolledSubject->description }}
             </option>
         @endforeach
     </select>

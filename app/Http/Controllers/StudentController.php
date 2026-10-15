@@ -6,6 +6,7 @@ use App\AttendanceSummary;
 use App\Http\Requests\StudentRequest;
 use App\Models\Block;
 use App\Models\Student;
+use App\Models\Subject;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -26,6 +27,12 @@ class StudentController extends Controller
                 'nullable',
                 'string',
                 'max:100',
+            ],
+
+            'subject_id' => [
+                'nullable',
+                'integer',
+                'exists:subjects,id',
             ],
 
             'year_level' => [
@@ -84,6 +91,13 @@ class StudentController extends Controller
                 fn ($query, $subject) => $query->where('subject', $subject)
             )
             ->when(
+                $filters['subject_id'] ?? null,
+                fn ($query, $subjectId) => $query->whereHas(
+                    'subjects',
+                    fn ($subjects) => $subjects->whereKey($subjectId)
+                )
+            )
+            ->when(
                 $filters['year_level'] ?? null,
                 fn ($query, $yearLevel) => $query->where('year_level', $yearLevel)
             )
@@ -111,6 +125,12 @@ class StudentController extends Controller
                 ->distinct()
                 ->orderBy('subject')
                 ->pluck('subject'),
+
+            'enrolledSubjects' => Subject::query()
+                ->when($request->user()->role === 'faculty', fn ($query) => $query->where('faculty_id', $request->user()->id))
+                ->whereHas('enrollments')
+                ->orderBy('code')
+                ->get(),
         ]);
     }
 

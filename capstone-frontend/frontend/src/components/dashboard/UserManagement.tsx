@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, 
   Search, 
@@ -46,14 +47,19 @@ import { apiFetch } from '../../api';
 type UserRow = { id: string; name: string; email: string; role: string; roleLabel: string; department: string; status: string; handledBlocks?: string[] };
 
 export function UserManagement() {
+  const [searchParams] = useSearchParams();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [availableBlocks, setAvailableBlocks] = useState<string[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') ?? '');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [addName, setAddName] = useState('');
   const [addEmail, setAddEmail] = useState('');
   const [addPassword, setAddPassword] = useState('');
@@ -66,15 +72,22 @@ export function UserManagement() {
   const [editHandledBlocks, setEditHandledBlocks] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updatingStatusUserId, setUpdatingStatusUserId] = useState<string | null>(null);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (signal?: AbortSignal) => {
     try {
-      const params = searchTerm ? new URLSearchParams({ search: searchTerm }) : '';
-      const res = await apiFetch(`/api/admin/users${params ? `?${params}` : ''}`);
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) params.set('search', searchTerm.trim());
+      if (roleFilter !== 'all') params.set('role', roleFilter);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      const query = params.toString();
+      const res = await apiFetch(`/api/admin/users${query ? `?${query}` : ''}`, { signal });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load users');
+      if (!res.ok) throw new Error(data.message || data.error || 'Failed to load users');
       setUsers(data.users || []);
+      setError(null);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to load users');
     } finally {
       setIsLoading(false);
@@ -94,10 +107,25 @@ export function UserManagement() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetchUsers(controller.signal);
+    }, 250);
     setIsLoading(true);
-    fetchUsers();
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchTerm, roleFilter, statusFilter]);
+
+  useEffect(() => {
     fetchAvailableBlocks();
-  }, [searchTerm]);
+  }, []);
+
+  useEffect(() => {
+    setSearchTerm(searchParams.get('search') ?? '');
+  }, [searchParams]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +198,30 @@ export function UserManagement() {
     }
   };
 
+  const handleStatusChange = async (user: UserRow) => {
+    const isReactivating = user.status !== 'Active';
+    if (!window.confirm(`${isReactivating ? 'Reactivate' : 'Archive'} ${user.name}?`)) return;
+
+    setError(null);
+    setSuccessMessage(null);
+    setUpdatingStatusUserId(user.id);
+    try {
+      const res = await apiFetch(`/api/admin/users/${user.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: isReactivating }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'Failed to update user status');
+      setSuccessMessage(data.message || `User ${isReactivating ? 'reactivated' : 'archived'}.`);
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user status');
+    } finally {
+      setUpdatingStatusUserId(null);
+    }
+  };
+
   const toggleBlock = (block: string, isAdd: boolean) => {
     if (isAdd) {
       setAddHandledBlocks((prev) => (prev.includes(block) ? prev : [...prev, block]));
@@ -197,7 +249,14 @@ export function UserManagement() {
           <p className="text-neutral-500">Manage students, faculty, and staff accounts.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => setShowFilters((visible) => !visible)}
+            aria-expanded={showFilters}
+            aria-controls="user-filters"
+          >
             <Filter className="w-4 h-4" />
             Filter
           </Button>
@@ -383,19 +442,64 @@ export function UserManagement() {
         </DialogContent>
       </Dialog>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+      {successMessage && <p className="text-sm text-emerald-700" role="status">{successMessage}</p>}
 
       {/* Filters & Search */}
-      <div className="flex items-center gap-4 bg-white p-4 rounded-lg border border-neutral-200 shadow-sm">
+      <div id="user-filters" className="flex flex-col gap-4 bg-white p-4 rounded-lg border border-neutral-200 shadow-sm">
         <div className="relative flex-1 max-w-sm">
+          <Label htmlFor="user-search" className="sr-only">Search users</Label>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <Input 
+            id="user-search"
             placeholder="Search users..." 
             className="pl-9"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        {showFilters && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:max-w-2xl">
+            <div className="space-y-2">
+              <Label htmlFor="user-role-filter">Role</Label>
+              <select
+                id="user-role-filter"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value)}
+              >
+                <option value="all">All roles</option>
+                <option value="student">Student</option>
+                <option value="admin">Professor</option>
+                <option value="program_head">Program Head</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="user-status-filter">Status</Label>
+              <select
+                id="user-status-filter"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            {(roleFilter !== 'all' || statusFilter !== 'all') && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-fit px-0 text-neutral-600"
+                onClick={() => { setRoleFilter('all'); setStatusFilter('all'); }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -473,7 +577,7 @@ export function UserManagement() {
                 <TableCell className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
+                      <Button variant="ghost" className="h-8 w-8 p-0" aria-label={`Actions for ${user.name}`}>
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -482,8 +586,13 @@ export function UserManagement() {
                       <DropdownMenuItem className="gap-2" onClick={() => handleEditClick(user)}>
                         <Pencil className="w-4 h-4" /> Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-amber-600 gap-2">
-                        <Archive className="w-4 h-4" /> Archive
+                      <DropdownMenuItem
+                        className="text-amber-600 gap-2"
+                        disabled={updatingStatusUserId === user.id}
+                        onSelect={() => handleStatusChange(user)}
+                      >
+                        <Archive className="w-4 h-4" />
+                        {updatingStatusUserId === user.id ? 'Updating...' : user.status === 'Active' ? 'Archive' : 'Reactivate'}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

@@ -10,7 +10,7 @@
     <p id="message">Press the button when the sensor is ready.</p>
     <button id="startButton">Register my fingerprint</button>
 
-    <script>
+    <script nonce="{{ request()->attributes->get('csp_nonce') }}">
         const button = document.getElementById('startButton');
         const message = document.getElementById('message');
 

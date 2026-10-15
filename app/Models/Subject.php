@@ -40,4 +40,9 @@ class Subject extends Model
     {
         return $this->hasMany(Enrollment::class);
     }
+
+    public function classSchedules(): HasMany
+    {
+        return $this->hasMany(ClassSchedule::class);
+    }
 }

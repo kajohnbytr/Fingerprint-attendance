@@ -9,13 +9,21 @@ use App\Http\Controllers\Api\SuperAdminController;
 use App\Http\Controllers\FingerprintController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/auth/login', [SessionController::class, 'login']);
-Route::get('/health/status', [HealthController::class, 'status']);
+Route::post('/auth/login', [SessionController::class, 'login'])->middleware('throttle:login');
+Route::post('/auth/mfa', [SessionController::class, 'verifyMfa'])->middleware('throttle:login');
+Route::get('/health/status', [HealthController::class, 'status'])->middleware('throttle:api');
 
-Route::middleware('auth:sanctum')->group(function (): void {
+Route::middleware(['auth:sanctum', 'api.idle', 'system.lockdown', 'throttle:api'])->group(function (): void {
     Route::get('/auth/me', [SessionController::class, 'me']);
     Route::put('/auth/password', [SessionController::class, 'updatePassword']);
     Route::post('/auth/logout', [SessionController::class, 'logout']);
+
+    Route::get('/session-settings', [FrontendController::class, 'sessionSettings'])
+        ->middleware(['active', 'password.changed', 'role:admin,faculty,super_admin']);
+    Route::get('/notifications', [FrontendController::class, 'notifications'])
+        ->middleware(['active', 'password.changed', 'role:admin,faculty,super_admin']);
+    Route::post('/notifications/read', [FrontendController::class, 'markNotificationsRead'])
+        ->middleware(['active', 'password.changed', 'role:admin,faculty,super_admin']);
 
     Route::middleware(['active', 'role:student'])->prefix('students')->group(function (): void {
         Route::get('/profile', [FrontendController::class, 'studentProfile']);
@@ -43,17 +51,19 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/admin/users', [SuperAdminController::class, 'users']);
         Route::post('/admin/users', [SuperAdminController::class, 'storeUser']);
         Route::patch('/admin/users/{user}', [SuperAdminController::class, 'updateUser'])->whereNumber('user');
+        Route::patch('/admin/users/{user}/status', [SuperAdminController::class, 'updateUserStatus'])->whereNumber('user');
         Route::get('/admin/available-blocks', [SuperAdminController::class, 'availableBlocks']);
-        Route::get('/admin/schedule-change-requests', [SuperAdminController::class, 'scheduleChangeRequests']);
-        Route::patch('/admin/schedule-change-requests/{changeRequest}', [SuperAdminController::class, 'updateScheduleChangeRequest'])->whereNumber('changeRequest');
         Route::get('/admin/audit-logs', [SuperAdminController::class, 'auditLogs']);
         Route::get('/admin/app-reports', [SuperAdminController::class, 'appReports']);
         Route::patch('/admin/app-reports/{report}', [SuperAdminController::class, 'updateAppReport'])->whereNumber('report');
+        Route::get('/admin/settings', [SuperAdminController::class, 'settings']);
+        Route::patch('/admin/settings', [SuperAdminController::class, 'updateSettings']);
     });
 });
 
-Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'active', 'system.lockdown', 'throttle:device'])->group(function (): void {
     Route::get('/health', HealthController::class);
+    Route::get('/students', [Esp8266Controller::class, 'enrolledStudents']);
     Route::post('/students', [Esp8266Controller::class, 'registerStudent']);
     Route::post('/readings', [Esp8266Controller::class, 'recordAttendance']);
     Route::post('/attendance', [Esp8266Controller::class, 'recordAttendance']);
@@ -62,7 +72,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function (): void {
     Route::post('/fingerprint/enroll/{enrollment}/complete', [FingerprintController::class, 'complete'])
         ->whereNumber('enrollment');
 
-    Route::middleware(['password.changed', 'role:admin,faculty,super_admin'])->group(function (): void {
+    Route::middleware(['api.idle', 'password.changed', 'role:admin,faculty,super_admin'])->group(function (): void {
         Route::get('/admin/overview', [FrontendController::class, 'adminOverview']);
         Route::get('/admin/archive-requests', [FrontendController::class, 'archiveRequests']);
     });

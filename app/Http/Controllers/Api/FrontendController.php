@@ -3,10 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\AttendanceSummary;
+use App\ClassScheduleManager;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
+use App\Security\IdleTimeout;
+use App\Security\PasswordPolicy;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,14 +20,95 @@ use Illuminate\Validation\ValidationException;
 
 class FrontendController extends Controller
 {
+    public function sessionSettings(IdleTimeout $idleTimeout): JsonResponse
+    {
+        return response()->json(['settings' => $idleTimeout->browserSettings()]);
+    }
+
+    public function notifications(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $announcementsReadAt = DB::table('portal_notification_reads')
+            ->where('user_id', $user->id)
+            ->value('announcements_read_at');
+        $announcementQuery = DB::table('portal_announcements')
+            ->leftJoin('subjects', 'subjects.id', '=', 'portal_announcements.subject_id')
+            ->join('users', 'users.id', '=', 'portal_announcements.author_id')
+            ->where('portal_announcements.published_at', '<=', now())
+            ->whereNull('portal_announcements.archived_at')
+            ->where(fn (QueryBuilder $query) => $query
+                ->whereNull('portal_announcements.expires_at')
+                ->orWhere('portal_announcements.expires_at', '>', now()))
+            ->when($user->role === 'faculty', fn (QueryBuilder $query) => $query->where(function (QueryBuilder $audience) use ($user): void {
+                $audience->whereIn('portal_announcements.audience', ['all', 'faculty'])
+                    ->orWhere(fn (QueryBuilder $subject) => $subject
+                        ->where('portal_announcements.audience', 'subject')
+                        ->where('subjects.faculty_id', $user->id));
+            }));
+        $unreadCount = (clone $announcementQuery)
+            ->when($announcementsReadAt, fn (QueryBuilder $query) => $query->where('portal_announcements.published_at', '>', $announcementsReadAt))
+            ->count('portal_announcements.id');
+        $announcements = $announcementQuery
+            ->select(
+                'portal_announcements.id',
+                'portal_announcements.title',
+                'portal_announcements.body',
+                'portal_announcements.published_at',
+                'subjects.code as subject_code',
+                'users.name as author_name',
+            )
+            ->orderByDesc('portal_announcements.published_at')
+            ->limit(8)
+            ->get()
+            ->map(fn (object $announcement): array => [
+                'id' => 'announcement-'.$announcement->id,
+                'label' => $announcement->title.' · '.($announcement->subject_code ?? 'Campus-wide').' · '.$announcement->author_name,
+                'count' => 0,
+                'title' => $announcement->title,
+                'body' => $announcement->body,
+                'detail' => ($announcement->subject_code ?? 'Campus-wide').' · '.$announcement->author_name,
+                'timestamp' => $announcement->published_at,
+            ])
+            ->values();
+
+        return response()->json([
+            'items' => $announcements,
+            'totalCount' => $unreadCount,
+        ]);
+    }
+
+    public function markNotificationsRead(Request $request): JsonResponse
+    {
+        DB::table('portal_notification_reads')->updateOrInsert(
+            ['user_id' => $request->user()->id],
+            [
+                'announcements_read_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+
+        return response()->json(['message' => 'Notifications marked as read.']);
+    }
+
     public function attendanceReports(Request $request, AttendanceSummary $attendance): JsonResponse
     {
         $data = $request->validate([
             'date' => ['nullable', 'date_format:Y-m-d'],
+            'from' => ['nullable', 'required_with:to', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'required_with:from', 'date_format:Y-m-d', 'after_or_equal:from'],
             'block' => ['nullable', 'string', 'max:50'],
             'status' => ['nullable', Rule::in(['present', 'absent', 'late'])],
         ]);
-        $date = CarbonImmutable::parse($data['date'] ?? 'today')->toDateString();
+        $fromDate = CarbonImmutable::parse($data['from'] ?? $data['date'] ?? 'today');
+        $toDate = CarbonImmutable::parse($data['to'] ?? $data['date'] ?? 'today');
+        if ($fromDate->startOfDay()->diffInDays($toDate->startOfDay()) > 6) {
+            throw ValidationException::withMessages([
+                'to' => ['Attendance reports can cover no more than one week.'],
+            ]);
+        }
+        $from = $fromDate->startOfDay();
+        $to = $toDate->endOfDay();
         $blocks = $attendance->enrollments($request->user())
             ->get()
             ->pluck('block')
@@ -32,10 +117,19 @@ class FrontendController extends Controller
             ->sortBy('name')
             ->values();
         $block = $blocks->firstWhere('name', $data['block'] ?? null);
+        $scheduledWeekdays = $attendance->subjects($request->user())
+            ->whereHas('enrollments', fn ($query) => $query
+                ->when($block, fn ($enrollments) => $enrollments->where('block_id', $block->id)))
+            ->pluck('day')
+            ->unique();
+        $scheduledDates = collect(CarbonPeriod::create($from->startOfDay(), $to->startOfDay()))
+            ->filter(fn ($date): bool => $scheduledWeekdays->contains($date->format('l')))
+            ->map(fn ($date): string => $date->toDateString())
+            ->values();
 
         $records = $attendance->records($request->user(), [
-            'from' => $date,
-            'to' => $date,
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
             'block_id' => $block?->id,
             'status' => $data['status'] ?? null,
         ])->reject(fn (array $record): bool => $record['status'] === 'pending')
@@ -57,11 +151,13 @@ class FrontendController extends Controller
                         'block' => $block->name,
                     ],
                 ];
-            });
+            })
+            ->values();
 
         return response()->json([
             'reports' => $records,
             'blocks' => $blocks->pluck('name'),
+            'scheduledDates' => $scheduledDates,
         ]);
     }
 
@@ -115,9 +211,15 @@ class FrontendController extends Controller
         ]);
         $todayRecords = $records->where('date', $today->toDateString());
         $counts = $attendance->counts($todayRecords);
+        $handledStudentCount = $attendance->enrollments($request->user())
+            ->whereHas('student', fn ($query) => $query
+                ->whereNull('deleted_at')
+                ->where('status', 'active'))
+            ->distinct()
+            ->count('student_id');
         $weekdayTrends = collect(CarbonPeriod::create(
             $today->startOfWeek(),
-            $today->startOfWeek()->addDays(4)
+            $today->endOfWeek()
         ))->map(function ($day) use ($records, $attendance): array {
             $dayCounts = $attendance->counts($records->where('date', $day->toDateString()));
 
@@ -131,7 +233,7 @@ class FrontendController extends Controller
 
         return response()->json([
             'stats' => [
-                'totalStudents' => Student::query()->where('status', 'active')->count(),
+                'totalStudents' => $handledStudentCount,
                 'presentToday' => $counts['present'],
                 'absentToday' => $counts['absent'],
                 'lateToday' => $counts['late'],
@@ -146,21 +248,24 @@ class FrontendController extends Controller
         ]);
     }
 
-    public function facultySchedule(Request $request, AttendanceSummary $attendance): JsonResponse
+    public function facultySchedule(Request $request, ClassScheduleManager $schedules): JsonResponse
     {
         $user = $request->user();
         $today = CarbonImmutable::today();
         $classes = $user->assignedSubjects()
-            ->where('day', $today->format('l'))
-            ->with(['enrollments.block'])
+            ->with(['enrollments.block', 'classSchedules'])
             ->orderBy('start_time')
             ->get()
-            ->flatMap(function ($subject) use ($user): array {
+            ->flatMap(function ($subject) use ($schedules, $today, $user): array {
                 return $subject->enrollments
                     ->whereNotNull('block_id')
                     ->groupBy('block_id')
-                    ->map(function ($enrollments) use ($subject, $user): array {
+                    ->map(function ($enrollments) use ($schedules, $subject, $today, $user): ?array {
                         $block = $enrollments->first()->block;
+                        $classSchedule = $schedules->effective($subject, $block->id);
+                        if ($classSchedule['day'] !== $today->format('l')) {
+                            return null;
+                        }
                         $graceMinutes = DB::table('class_grace_periods')
                             ->where('user_id', $user->id)
                             ->where('subject_id', $subject->id)
@@ -175,11 +280,12 @@ class FrontendController extends Controller
                             'subjectName' => $subject->description,
                             'block' => $block->name,
                             'studentCount' => $enrollments->pluck('student_id')->unique()->count(),
-                            'schedule' => $subject->start_time->format('g:i A').' - '.$subject->end_time->format('g:i A'),
-                            'room' => $subject->room,
+                            'schedule' => CarbonImmutable::createFromFormat('H:i', $classSchedule['start_time'])->format('g:i A').' - '.CarbonImmutable::createFromFormat('H:i', $classSchedule['end_time'])->format('g:i A'),
+                            'room' => $classSchedule['room'],
                             'graceMinutes' => (int) ($graceMinutes ?? 10),
                         ];
                     })
+                    ->filter()
                     ->values()
                     ->all();
             })
@@ -338,7 +444,7 @@ class FrontendController extends Controller
     {
         $data = $request->validate([
             'currentPassword' => ['required', 'string'],
-            'newPassword' => ['required', 'string', 'min:8'],
+            'newPassword' => PasswordPolicy::rules($request->user()),
             'confirmPassword' => ['required', 'same:newPassword'],
         ]);
 
@@ -348,38 +454,43 @@ class FrontendController extends Controller
             ]);
         }
 
-        $request->user()->update(['password' => $data['newPassword']]);
+        PasswordPolicy::change($request->user(), $data['newPassword']);
 
         return response()->json(['message' => 'Password updated.']);
     }
 
-    public function studentCourses(Request $request): JsonResponse
+    public function studentCourses(Request $request, ClassScheduleManager $schedules): JsonResponse
     {
         $student = $this->studentFor($request);
 
         return response()->json([
             'courses' => $student->subjects()
+                ->with('classSchedules')
                 ->orderBy('day')
                 ->orderBy('start_time')
                 ->get()
-                ->map(fn ($subject): array => [
-                    'courseName' => $subject->code.' - '.$subject->description,
-                    'schedule' => $subject->day.' '.$subject->start_time->format('g:i A').' - '.$subject->end_time->format('g:i A'),
-                    'room' => $subject->room,
-                    'hasPendingChange' => false,
-                    'requestedSchedule' => '',
-                    'requestedRoom' => '',
-                    'status' => null,
-                ]),
+                ->map(function ($subject) use ($schedules): array {
+                    $schedule = $schedules->effective($subject, $subject->pivot->block_id);
+
+                    return [
+                        'courseName' => $subject->code.' - '.$subject->description,
+                        'schedule' => $schedule['day'].' '.CarbonImmutable::createFromFormat('H:i', $schedule['start_time'])->format('g:i A').' - '.CarbonImmutable::createFromFormat('H:i', $schedule['end_time'])->format('g:i A'),
+                        'room' => $schedule['room'],
+                        'hasPendingChange' => false,
+                        'requestedSchedule' => '',
+                        'requestedRoom' => '',
+                        'status' => null,
+                    ];
+                }),
         ]);
     }
 
-    public function studentAttendance(Request $request): JsonResponse
+    public function studentAttendance(Request $request, ClassScheduleManager $schedules): JsonResponse
     {
         $student = $this->studentFor($request);
         $now = CarbonImmutable::now();
         $from = $now->startOfDay()->subDays(29);
-        $subjects = $student->subjects()->get();
+        $subjects = $student->subjects()->with('classSchedules')->get();
         $classGracePeriods = DB::table('class_grace_periods')
             ->whereIn('subject_id', $subjects->pluck('id'))
             ->get()
@@ -396,12 +507,13 @@ class FrontendController extends Controller
 
         foreach (CarbonPeriod::create($from->startOfDay(), $now->startOfDay()) as $day) {
             foreach ($subjects as $subject) {
-                if ($subject->day !== $day->format('l') || $subject->pivot->created_at->isAfter($day->toDateString().' '.$subject->start_time->format('H:i:s'))) {
+                $schedule = $schedules->effective($subject, $subject->pivot->block_id);
+                if ($schedule['day'] !== $day->format('l') || $subject->pivot->created_at->isAfter($day->toDateString().' '.$schedule['start_time'])) {
                     continue;
                 }
 
-                $start = CarbonImmutable::parse($day->toDateString().' '.$subject->start_time->format('H:i:s'));
-                $end = CarbonImmutable::parse($day->toDateString().' '.$subject->end_time->format('H:i:s'));
+                $start = CarbonImmutable::parse($day->toDateString().' '.$schedule['start_time']);
+                $end = CarbonImmutable::parse($day->toDateString().' '.$schedule['end_time']);
                 if ($end->lessThanOrEqualTo($start) || $end->isAfter($now)) {
                     continue;
                 }

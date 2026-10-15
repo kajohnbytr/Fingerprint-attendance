@@ -98,25 +98,19 @@
             >
             <span>Remember me</span>
         </label>
-        <button class="forgot-link" type="button">Forgot password?</button>
     </div>
 
     <button class="button primary" type="submit">
         Sign In
     </button>
 
-    @env('local')
-    <small>
-        Demo: admin@northbridge.test / ChangeMe123!
-    </small>
-    @endenv
 
     <div class="login-footer">
         Authorized access only. Your role controls available features.
     </div>
 </form>
 
-<script>
+<script nonce="{{ request()->attributes->get('csp_nonce') }}">
     const passwordInput = document.getElementById('login-password');
     const passwordToggle = document.querySelector('.password-toggle');
 

@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
 /*! tailwindcss v4.1.3 | MIT License | https://tailwindcss.com */
 @layer properties {
   @supports (((-webkit-hyphens: none)) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color: rgb(from red r g b)))) {
@@ -60,9 +59,25 @@
   }
 }
 
+@media print {
+  .admin-portal aside,
+  .admin-portal header,
+  .admin-portal footer,
+  .admin-portal button {
+    display: none !important;
+  }
+
+  .admin-portal,
+  .admin-portal main,
+  .admin-portal [class*="bg-"] {
+    background: white !important;
+    color: black !important;
+  }
+}
+
 @layer theme {
   :root, :host {
-    --font-sans: "Poppins", sans-serif;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --color-red-50: oklch(.971 .013 17.38);
     --color-red-100: oklch(.936 .032 17.717);
@@ -420,7 +435,7 @@
     max-width: none;
     min-height: 100vh;
     margin: 0;
-    font-family: Poppins, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     position: relative;
   }
 
@@ -3037,5 +3052,617 @@ html {
   to {
     opacity: var(--tw-exit-opacity, 1);
     transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
+  }
+}
+
+.admin-portal {
+  min-height: 100vh;
+  background: #ffffff !important;
+  color: #090909;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.admin-portal aside {
+  background: #ffffff !important;
+  border-color: #e5e5e5 !important;
+  color: #090909;
+}
+
+.admin-portal aside > div:first-child,
+.admin-portal aside > div:last-child {
+  border-color: #e5e5e5 !important;
+}
+
+.admin-portal nav button {
+  min-height: 40px;
+  border-radius: 9999px !important;
+}
+
+.admin-portal nav button[class~="bg-neutral-900"] {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+
+.admin-portal nav button[class~="text-neutral-600"]:hover,
+.admin-portal nav button[class~="hover:bg-neutral-100"]:hover {
+  background: #fafafa !important;
+  color: #000000 !important;
+}
+
+.admin-portal aside button[class~="text-red-600"] {
+  color: #525252 !important;
+}
+
+.admin-portal aside button[class~="hover:bg-red-50"]:hover {
+  background: #fafafa !important;
+  color: #000000 !important;
+}
+
+.admin-portal main {
+  background: #ffffff;
+}
+
+.admin-portal main > header {
+  min-height: 64px;
+  background: #ffffff !important;
+  border-color: #e5e5e5 !important;
+}
+
+.admin-portal main > header input {
+  min-height: 36px;
+  border-radius: 9999px !important;
+  border-color: #e5e5e5 !important;
+  background: #fafafa !important;
+  font-family: inherit;
+}
+
+.admin-portal main > header button,
+.admin-portal main button {
+  border-radius: 9999px;
+}
+
+.admin-portal main > div[class*="p-4"] {
+  width: 100%;
+  max-width: 1600px;
+  margin-inline: auto;
+  background: #ffffff;
+}
+
+.admin-portal main h1 {
+  color: #000000;
+  font-family: inherit;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.admin-portal [class~="bg-neutral-50"] {
+  background-color: #ffffff !important;
+}
+
+.admin-portal [class~="bg-neutral-100"] {
+  background-color: #fafafa !important;
+}
+
+.admin-portal [class~="text-blue-600"],
+.admin-portal [class~="text-blue-700"] {
+  color: #000000 !important;
+}
+
+.admin-portal [class~="rounded-xl"],
+.admin-portal [class~="rounded-2xl"] {
+  border-radius: 12px !important;
+}
+
+.admin-portal [class*="shadow"] {
+  box-shadow: none !important;
+}
+
+.admin-portal input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.admin-portal select,
+.admin-portal textarea {
+  border-radius: 9999px;
+  border-color: #e5e5e5;
+  background-color: #ffffff;
+}
+
+.admin-portal textarea {
+  border-radius: 12px;
+}
+
+.admin-portal input:not([type="checkbox"]):not([type="radio"]):focus,
+.admin-portal select:focus,
+.admin-portal textarea:focus {
+  border-color: #000000;
+  --tw-ring-color: rgba(59, 130, 246, 0.5);
+}
+
+.admin-portal .recharts-cartesian-grid line {
+  stroke: #e5e5e5;
+}
+
+.admin-portal .recharts-text {
+  fill: #737373;
+}
+
+.admin-portal {
+  background: #ffffff !important;
+  color: #000000;
+  font-family: "Apercu", Inter, "Helvetica Neue", Arial, sans-serif;
+}
+
+.admin-portal aside,
+.admin-portal main,
+.admin-portal main > header,
+.admin-portal main > div[class*="p-4"] {
+  background: #ffffff !important;
+}
+
+.admin-portal aside {
+  border-color: #e0e0e0 !important;
+}
+
+.admin-portal aside > div,
+.admin-portal nav {
+  border-color: #e0e0e0 !important;
+}
+
+.admin-portal nav button {
+  min-height: 42px;
+  border-radius: 0 !important;
+  border-left: 2px solid transparent;
+  color: #1a1a1a !important;
+}
+
+.admin-portal nav button[class~="bg-neutral-900"] {
+  border-left-color: #000000;
+  background: #ffffff !important;
+  color: #000000 !important;
+  font-weight: 700;
+}
+
+.admin-portal nav button:hover {
+  background: #f5f5f5 !important;
+  color: #000000 !important;
+}
+
+.admin-portal aside button[class~="text-red-600"] {
+  color: #000000 !important;
+}
+
+.admin-portal aside button[class~="hover:bg-red-50"]:hover {
+  background: #f5f5f5 !important;
+}
+
+.admin-portal main > header {
+  min-height: 72px;
+  border-top: 5px solid #000000;
+  border-bottom: 1px solid #e0e0e0 !important;
+}
+
+.admin-portal main > header input {
+  min-height: 40px;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: #000000;
+  font-family: inherit;
+}
+
+.admin-portal main > header input:focus {
+  outline: 2px solid #000000;
+  outline-offset: 2px;
+  --tw-ring-shadow: none;
+}
+
+.admin-portal main > div[class*="p-4"] {
+  max-width: 1600px;
+  margin-inline: auto;
+}
+
+.admin-portal main h1,
+.admin-portal main h2,
+.admin-portal main h3 {
+  color: #000000;
+}
+
+.admin-portal main h1 {
+  font-family: "WiredDisplay", "Times New Roman", Georgia, serif;
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 400;
+  letter-spacing: -.3px;
+  line-height: 1.05;
+}
+
+.admin-portal main [class*="rounded"] {
+  border-radius: 0 !important;
+}
+
+.admin-portal [class*="shadow"] {
+  box-shadow: none !important;
+}
+
+.admin-portal [class*="border-neutral-"],
+.admin-portal [class*="divide-neutral-"] {
+  border-color: #e0e0e0 !important;
+}
+
+.admin-portal button,
+.admin-portal a,
+.admin-portal input,
+.admin-portal select,
+.admin-portal textarea {
+  font-family: inherit;
+}
+
+.admin-portal input:not([type="checkbox"]):not([type="radio"]),
+.admin-portal select,
+.admin-portal textarea {
+  border: 1px solid #000000;
+  border-radius: 0;
+  background: #ffffff;
+  color: #000000;
+}
+
+.admin-portal textarea {
+  border-radius: 0;
+}
+
+.admin-portal input:focus,
+.admin-portal select:focus,
+.admin-portal textarea:focus,
+.admin-portal button:focus-visible,
+.admin-portal a:focus-visible {
+  outline: 2px solid #000000;
+  outline-offset: 2px;
+  --tw-ring-color: transparent;
+}
+
+.admin-portal [class*="bg-blue-"],
+.admin-portal [class*="bg-emerald-"],
+.admin-portal [class*="bg-green-"],
+.admin-portal [class*="bg-amber-"],
+.admin-portal [class*="bg-red-"],
+.admin-portal [class*="bg-rose-"],
+.admin-portal [class*="bg-purple-"] {
+  background-color: #f5f5f5 !important;
+}
+
+.admin-portal [class*="text-blue-"],
+.admin-portal [class*="text-emerald-"],
+.admin-portal [class*="text-green-"],
+.admin-portal [class*="text-amber-"],
+.admin-portal [class*="text-red-"],
+.admin-portal [class*="text-rose-"],
+.admin-portal [class*="text-purple-"] {
+  color: #1a1a1a !important;
+}
+
+.admin-portal [class*="border-blue-"],
+.admin-portal [class*="border-emerald-"],
+.admin-portal [class*="border-green-"],
+.admin-portal [class*="border-amber-"],
+.admin-portal [class*="border-red-"],
+.admin-portal [class*="border-rose-"],
+.admin-portal [class*="border-purple-"] {
+  border-color: #e0e0e0 !important;
+}
+
+.admin-portal .recharts-cartesian-grid line {
+  stroke: #e0e0e0;
+}
+
+.admin-portal .recharts-text {
+  fill: #757575;
+  font-family: inherit;
+}
+
+@media (max-width: 767px) {
+  .admin-portal > aside.hidden {
+    background: #ffffff !important;
+  }
+
+  .admin-portal main > header {
+    position: relative;
+  }
+}
+
+/* Unified portal design contract: mirrored by the Laravel portal. */
+.admin-portal {
+  --portal-canvas: #f8fafc;
+  --portal-surface: #ffffff;
+  --portal-surface-muted: #f4f6f8;
+  --portal-ink: #111827;
+  --portal-muted: #667085;
+  --portal-border: #e4e7ec;
+  --portal-accent: #111827;
+  --portal-focus: rgba(59, 130, 246, .45);
+  --portal-danger: #b42318;
+  --portal-radius: 12px;
+  --portal-sidebar: 232px;
+  --portal-header: 64px;
+  background: var(--portal-canvas) !important;
+  color: var(--portal-ink);
+  font-family: Inter, "Instrument Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.admin-portal aside,
+.admin-portal main,
+.admin-portal main > header,
+.admin-portal .portal-content {
+  background: var(--portal-canvas) !important;
+  color: var(--portal-ink);
+}
+
+.admin-portal aside,
+.admin-portal main > header {
+  background: color-mix(in srgb, var(--portal-surface) 94%, transparent) !important;
+  border-color: var(--portal-border) !important;
+  backdrop-filter: blur(14px);
+}
+
+.admin-portal main > header {
+  min-height: var(--portal-header);
+  height: var(--portal-header);
+}
+
+.admin-portal .portal-content {
+  width: 100%;
+  max-width: 1440px !important;
+  margin-inline: auto;
+  padding: 32px !important;
+}
+
+.admin-portal nav button {
+  min-height: 40px;
+  border-radius: 10px !important;
+  color: var(--portal-muted) !important;
+  font-weight: 550;
+}
+
+.admin-portal nav button:hover {
+  background: var(--portal-surface-muted) !important;
+  color: var(--portal-ink) !important;
+}
+
+.admin-portal nav button[class~="bg-neutral-900"] {
+  background: var(--portal-accent) !important;
+  color: var(--portal-surface) !important;
+}
+
+.admin-portal main h1,
+.admin-portal main h2,
+.admin-portal main h3 {
+  color: var(--portal-ink) !important;
+  font-family: inherit !important;
+  letter-spacing: -.015em;
+}
+
+.admin-portal main h1 {
+  font-size: clamp(26px, 3vw, 32px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.admin-portal main [class*="rounded-xl"],
+.admin-portal main [class*="rounded-2xl"],
+.admin-portal [data-slot="card"] {
+  border-radius: var(--portal-radius) !important;
+}
+
+.admin-portal [data-slot="card"],
+.admin-portal main [class*="bg-white"] {
+  border-color: var(--portal-border) !important;
+  background: var(--portal-surface) !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .035) !important;
+}
+
+.admin-portal main button,
+.admin-portal input:not([type="checkbox"]):not([type="radio"]),
+.admin-portal select {
+  min-height: 40px;
+  border-radius: 10px !important;
+}
+
+.admin-portal input:not([type="checkbox"]):not([type="radio"]),
+.admin-portal select,
+.admin-portal textarea {
+  border-color: var(--portal-border) !important;
+  background: var(--portal-surface) !important;
+  color: var(--portal-ink) !important;
+}
+
+.admin-portal table thead {
+  background: var(--portal-surface-muted);
+}
+
+.admin-portal th {
+  height: 44px;
+  color: var(--portal-muted) !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-portal td {
+  height: 52px;
+  border-color: var(--portal-border) !important;
+}
+
+.admin-portal tbody tr:hover {
+  background: var(--portal-surface-muted);
+}
+
+.admin-portal p[class*="text-neutral-500"],
+.admin-portal [class*="text-neutral-600"] {
+  color: var(--portal-muted) !important;
+}
+
+@media (max-width: 767px) {
+  .admin-portal .portal-content { padding: 24px 16px !important; }
+}
+
+.admin-portal {
+  background: #ffffff !important;
+  color: #000000;
+  font-family: "SF Pro Rounded", ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.admin-portal aside,
+.admin-portal main,
+.admin-portal main > header,
+.admin-portal main > div[class*="p-4"] {
+  background: #ffffff !important;
+}
+
+.admin-portal aside {
+  border-color: #e5e5e5 !important;
+}
+
+.admin-portal aside > div,
+.admin-portal nav {
+  border-color: #e5e5e5 !important;
+}
+
+.admin-portal nav button {
+  min-height: 40px;
+  border-radius: 9999px !important;
+  border-left: 0;
+  color: #525252 !important;
+}
+
+.admin-portal nav button[class~="bg-neutral-900"] {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+
+.admin-portal nav button:hover {
+  background: #fafafa !important;
+  color: #000000 !important;
+}
+
+.admin-portal nav button[class~="bg-neutral-900"]:hover {
+  background: #090909 !important;
+  color: #ffffff !important;
+}
+
+.admin-portal aside button[class~="text-red-600"] {
+  color: #525252 !important;
+}
+
+.admin-portal aside button[class~="hover:bg-red-50"]:hover {
+  background: #fafafa !important;
+  color: #000000 !important;
+}
+
+.admin-portal main > header {
+  min-height: 64px;
+  border-top: 0;
+  border-bottom: 1px solid #e5e5e5 !important;
+}
+
+.admin-portal main > header input {
+  min-height: 36px;
+  border: 1px solid #e5e5e5 !important;
+  border-radius: 9999px !important;
+  background: #fafafa !important;
+}
+
+.admin-portal main > header input:focus {
+  border-color: #d4d4d4 !important;
+  outline: 0;
+  --tw-ring-color: rgba(59, 130, 246, 0.5);
+}
+
+.admin-portal main > div[class*="p-4"] {
+  max-width: 1600px;
+  margin-inline: auto;
+}
+
+.admin-portal main h1,
+.admin-portal main h2,
+.admin-portal main h3 {
+  color: #000000;
+  font-family: "SF Pro Rounded", ui-rounded, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.admin-portal main h1 {
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.admin-portal main [class*="rounded"] {
+  border-radius: 12px !important;
+}
+
+.admin-portal main button,
+.admin-portal main a {
+  border-radius: 9999px !important;
+}
+
+.admin-portal [class*="shadow"] {
+  box-shadow: none !important;
+}
+
+.admin-portal [class*="border-neutral-"],
+.admin-portal [class*="divide-neutral-"] {
+  border-color: #e5e5e5 !important;
+}
+
+.admin-portal button,
+.admin-portal a,
+.admin-portal input,
+.admin-portal select,
+.admin-portal textarea {
+  font-family: inherit;
+}
+
+.admin-portal input:not([type="checkbox"]):not([type="radio"]),
+.admin-portal select,
+.admin-portal textarea {
+  border-color: #e5e5e5;
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #000000;
+}
+
+.admin-portal main input:not([type="checkbox"]):not([type="radio"]),
+.admin-portal main select {
+  border-radius: 9999px !important;
+}
+
+.admin-portal textarea {
+  border-radius: 12px;
+}
+
+.admin-portal input:focus,
+.admin-portal select:focus,
+.admin-portal textarea:focus,
+.admin-portal button:focus-visible,
+.admin-portal a:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+  --tw-ring-color: rgba(59, 130, 246, 0.5);
+}
+
+.admin-portal [class*="text-blue-600"],
+.admin-portal [class*="text-blue-700"] {
+  color: #000000 !important;
+}
+
+.admin-portal .recharts-cartesian-grid line {
+  stroke: #e5e5e5;
+}
+
+.admin-portal .recharts-text {
+  fill: #737373;
+  font-family: inherit;
+}
+
+@media (max-width: 767px) {
+  .admin-portal main > header {
+    position: relative;
   }
 }

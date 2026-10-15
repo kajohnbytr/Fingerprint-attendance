@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import React, { FormEvent, useEffect, useState } from 'react';
+import { ShieldAlert } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiFetch } from '../../api';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -19,22 +21,61 @@ import {
   CardTitle 
 } from '../ui/card';
 
-import { API_BASE_URL } from '../../config';
+export function Settings() {
+  const [settings, setSettings] = useState({
+    schoolName: 'University Attendance Portal', attendanceRequired: 75, proxyDetection: true,
+    requireAdminMfa: false, systemLockdown: false, sessionTimeoutMinutes: 30, passwordExpiryDays: 90,
+    lowAttendanceAlerts: true, systemHealthReports: true,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-export function Settings({
-  canManageMaintenance,
-  isMaintenanceMode,
-  onToggleMaintenance,
-}: {
-  canManageMaintenance: boolean;
-  isMaintenanceMode: boolean;
-  onToggleMaintenance: (value: boolean) => void;
-}) {
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch('/api/admin/settings', { signal: controller.signal })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.message || 'Unable to load school settings.');
+        setSettings(body.settings);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') toast.error(error.message);
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, []);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await apiFetch('/api/admin/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const firstError = Object.values(body.errors || {}).flat()[0];
+        throw new Error(String(firstError || body.message || 'Unable to save school settings.'));
+      }
+      setSettings(body.settings);
+      window.dispatchEvent(new CustomEvent('school-settings-updated', { detail: body.settings }));
+      toast.success(body.message || 'School portal settings saved.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save school settings.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p className="text-neutral-500">Loading school settings…</p>;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900">System Configuration</h1>
-        <p className="text-neutral-500">Manage global settings, security, and notifications.</p>
+        <p className="text-neutral-500">Manage school attendance, security, and notification policies.</p>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
@@ -48,79 +89,29 @@ export function Settings({
         <div className="mt-6">
           {/* General Settings */}
           <TabsContent value="general">
-            <Card>
+            <form onSubmit={save}><Card>
               <CardHeader>
                 <CardTitle>General Settings</CardTitle>
                 <CardDescription>
-                  Configure basic system information and appearance.
+                  Configure the school information shown by the attendance portal.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="org-name">Organization Name</Label>
-                  <Input id="org-name" defaultValue="University of Technology" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">Dark Mode</Label>
-                    <p className="text-sm text-neutral-500">
-                      Enable dark mode for the admin interface.
-                    </p>
-                  </div>
-                  <Switch />
+                  <Label htmlFor="school-name">School Name</Label>
+                  <Input id="school-name" value={settings.schoolName} maxLength={150} required onChange={event => setSettings({ ...settings, schoolName: event.target.value })} />
                 </div>
               </CardContent>
               <CardFooter>
-                <Button className="ml-auto">Save Changes</Button>
+                <Button className="settings-save-button ml-auto" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save School Details'}</Button>
               </CardFooter>
-            </Card>
+            </Card></form>
 
-            {canManageMaintenance && (
-              <Card className="mt-6 border-amber-200">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-500" />
-                    Maintenance Mode
-                  </CardTitle>
-                  <CardDescription>
-                    Temporarily disable access for students and teachers.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">
-                      {isMaintenanceMode ? 'Active' : 'Inactive'}
-                    </p>
-                    <p className="text-sm text-neutral-500">
-                      Only super admins can access the system.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={isMaintenanceMode}
-                    onCheckedChange={async (checked) => {
-                      try {
-                        const res = await fetch(`${API_BASE_URL}/api/admin/settings`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          credentials: 'include',
-                          body: JSON.stringify({ settings: { maintenanceMode: checked } }),
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Failed to update');
-                        onToggleMaintenance(checked);
-                      } catch (e) {
-                        console.error('Failed to update maintenance mode:', e);
-                      }
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* Attendance Settings */}
           <TabsContent value="attendance">
-            <Card>
+            <form onSubmit={save}><Card>
               <CardHeader>
                 <CardTitle>Attendance Rules</CardTitle>
                 <CardDescription>
@@ -130,28 +121,28 @@ export function Settings({
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="threshold">Attendance Required (%)</Label>
-                  <Input id="threshold" type="number" defaultValue="75" />
+                  <Input id="threshold" type="number" min={1} max={100} value={settings.attendanceRequired} onChange={event => setSettings({ ...settings, attendanceRequired: Number(event.target.value) })} />
                   <p className="text-xs text-neutral-500">Students below this threshold will be flagged.</p>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base">Proxy Detection</Label>
+                    <Label className="text-base">Duplicate Attendance Protection</Label>
                     <p className="text-sm text-neutral-500">
-                      Automatically flag suspicious check-ins (e.g., same device, quick location jumps).
+                      Keep one valid fingerprint attendance record per student, subject, and class date.
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch className="settings-switch" checked={settings.proxyDetection} onCheckedChange={checked => setSettings({ ...settings, proxyDetection: checked })} aria-label="Duplicate attendance detection" />
                 </div>
               </CardContent>
               <CardFooter>
-                <Button className="ml-auto">Save Rules</Button>
+                <Button className="settings-save-button ml-auto" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Attendance Rules'}</Button>
               </CardFooter>
-            </Card>
+            </Card></form>
           </TabsContent>
 
           {/* Security Settings */}
           <TabsContent value="security">
-            <Card>
+            <form onSubmit={save}><Card>
               <CardHeader>
                 <CardTitle>Security & Access</CardTitle>
                 <CardDescription>
@@ -159,6 +150,19 @@ export function Settings({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className={`settings-lockdown-panel ${settings.systemLockdown ? 'is-active' : ''}`}>
+                  <div className="settings-lockdown-icon" aria-hidden="true"><ShieldAlert /></div>
+                  <div className="settings-lockdown-content">
+                    <div className="settings-lockdown-heading">
+                      <Label className="text-base">Emergency System Lockdown</Label>
+                      <span className="settings-lockdown-status">{settings.systemLockdown ? 'Lockdown active' : 'System accessible'}</span>
+                    </div>
+                    <p>
+                      Immediately block Program Heads, professors, students, and IoT devices. Super Admin access remains available to restore the system.
+                    </p>
+                  </div>
+                  <Switch className="settings-switch settings-switch--danger" checked={settings.systemLockdown} onCheckedChange={checked => setSettings({ ...settings, systemLockdown: checked })} aria-label="Emergency system lockdown" />
+                </div>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-base">Two-Factor Authentication (2FA)</Label>
@@ -166,26 +170,28 @@ export function Settings({
                       Require 2FA for all admin accounts.
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch className="settings-switch" checked={settings.requireAdminMfa} onCheckedChange={checked => setSettings({ ...settings, requireAdminMfa: checked })} aria-label="Two-factor authentication" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="session-timeout">Session Timeout (Minutes)</Label>
-                  <Input id="session-timeout" type="number" defaultValue="60" />
+                  <Label htmlFor="session-timeout">Inactivity Timeout (Minutes)</Label>
+                  <Input id="session-timeout" type="number" min={5} max={1440} value={settings.sessionTimeoutMinutes} onChange={event => setSettings({ ...settings, sessionTimeoutMinutes: Number(event.target.value) })} />
+                  <p className="text-xs text-neutral-500">Users receive a two-minute warning before they are automatically signed out. Applies to all authenticated portals.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password-expiry">Password Expiry (Days)</Label>
-                  <Input id="password-expiry" type="number" defaultValue="90" />
+                  <Input id="password-expiry" type="number" min={0} max={365} value={settings.passwordExpiryDays} onChange={event => setSettings({ ...settings, passwordExpiryDays: Number(event.target.value) })} />
+                  <p className="text-xs text-neutral-500">Use 0 to disable password expiration.</p>
                 </div>
               </CardContent>
               <CardFooter>
-                <Button className="ml-auto">Update Security</Button>
+                <Button className="settings-save-button ml-auto" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Update Security'}</Button>
               </CardFooter>
-            </Card>
+            </Card></form>
           </TabsContent>
 
           {/* Notifications */}
           <TabsContent value="notifications">
-             <Card>
+             <form onSubmit={save}><Card>
               <CardHeader>
                 <CardTitle>Notification Preferences</CardTitle>
                 <CardDescription>
@@ -200,7 +206,7 @@ export function Settings({
                       Email faculty when class attendance drops below 50%.
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch className="settings-switch" checked={settings.lowAttendanceAlerts} onCheckedChange={checked => setSettings({ ...settings, lowAttendanceAlerts: checked })} aria-label="Low attendance alerts" />
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -209,13 +215,13 @@ export function Settings({
                       Weekly email summary of system performance.
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch className="settings-switch" checked={settings.systemHealthReports} onCheckedChange={checked => setSettings({ ...settings, systemHealthReports: checked })} aria-label="System health reports" />
                 </div>
               </CardContent>
               <CardFooter>
-                <Button className="ml-auto">Save Preferences</Button>
+                <Button className="settings-save-button ml-auto" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Preferences'}</Button>
               </CardFooter>
-            </Card>
+            </Card></form>
           </TabsContent>
         </div>
       </Tabs>

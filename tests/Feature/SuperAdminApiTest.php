@@ -35,7 +35,6 @@ class SuperAdminApiTest extends TestCase
             '/api/admin/master-schedule' => 'entries',
             '/api/admin/users' => 'users',
             '/api/admin/available-blocks' => 'blocks',
-            '/api/admin/schedule-change-requests' => 'requests',
             '/api/admin/audit-logs' => 'logs',
             '/api/admin/app-reports' => 'reports',
         ] as $endpoint => $key) {
@@ -67,5 +66,69 @@ class SuperAdminApiTest extends TestCase
             'user_id' => $superAdmin->id,
             'action' => 'Master schedule created',
         ]);
+    }
+
+    public function test_super_admin_can_filter_and_archive_users(): void
+    {
+        $superAdmin = User::factory()->create([
+            'role' => 'super_admin',
+            'must_change_password' => false,
+        ]);
+        $faculty = User::factory()->create([
+            'name' => 'Faculty Filter Match',
+            'role' => 'faculty',
+            'is_active' => true,
+        ]);
+        User::factory()->create([
+            'name' => 'Inactive Student',
+            'role' => 'student',
+            'is_active' => false,
+        ]);
+
+        $this->actingAs($superAdmin)
+            ->getJson('/api/admin/users?search=Filter&role=admin&status=active')
+            ->assertOk()
+            ->assertJsonCount(1, 'users')
+            ->assertJsonPath('users.0.id', (string) $faculty->id);
+
+        $this->patchJson('/api/admin/users/'.$faculty->id, [
+            'name' => 'Updated Faculty',
+            'email' => $faculty->email,
+            'role' => 'admin',
+            'handledBlocks' => [],
+        ])->assertOk()
+            ->assertJsonPath('user.name', 'Updated Faculty');
+
+        $this->patchJson('/api/admin/users/'.$faculty->id.'/status', ['isActive' => false])
+            ->assertOk()
+            ->assertJsonPath('user.status', 'Inactive');
+
+        $this->assertDatabaseHas('users', ['id' => $faculty->id, 'name' => 'Updated Faculty', 'is_active' => false]);
+        $this->assertDatabaseHas('audit_logs', ['user_id' => $superAdmin->id, 'action' => 'User archived']);
+    }
+
+    public function test_super_admin_cannot_archive_their_own_account(): void
+    {
+        $superAdmin = User::factory()->create([
+            'role' => 'super_admin',
+            'must_change_password' => false,
+        ]);
+
+        $this->actingAs($superAdmin)
+            ->patchJson('/api/admin/users/'.$superAdmin->id.'/status', ['isActive' => false])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'You cannot archive your own account.');
+    }
+
+    public function test_schedule_change_request_api_has_been_removed(): void
+    {
+        $superAdmin = User::factory()->create([
+            'role' => 'super_admin',
+            'must_change_password' => false,
+        ]);
+
+        $this->actingAs($superAdmin)
+            ->getJson('/api/admin/schedule-change-requests')
+            ->assertNotFound();
     }
 }

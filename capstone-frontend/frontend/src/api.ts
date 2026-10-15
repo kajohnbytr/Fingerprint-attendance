@@ -25,9 +25,17 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return fetch(`${API_ORIGIN}${normalizedPath}`, {
+  const response = await fetch(`${API_ORIGIN}${normalizedPath}`, {
     ...init,
     headers,
     credentials: 'omit',
   });
+
+  if (response.status === 503) {
+    response.clone().json().then(body => {
+      if (body?.lockdown === true) window.dispatchEvent(new Event('system-lockdown'));
+    }).catch(() => undefined);
+  }
+
+  return response;
 }

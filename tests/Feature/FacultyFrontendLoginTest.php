@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Block;
+use App\Models\ClassSchedule;
 use App\Models\Enrollment;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -131,6 +133,44 @@ class FacultyFrontendLoginTest extends TestCase
             ->assertJsonPath('classes.0.graceMinutes', 10);
     }
 
+    public function test_professor_schedule_uses_the_program_head_schedule_for_each_block(): void
+    {
+        Carbon::setTestNow('2026-10-12 09:00:00');
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        $subject = Subject::factory()->create([
+            'faculty_id' => $faculty->id,
+            'code' => 'ITE 367',
+            'day' => 'Wednesday',
+        ]);
+        $mondayBlock = Block::factory()->create(['name' => 'COMSEC 01']);
+        $tuesdayBlock = Block::factory()->create(['name' => 'COMSEC 02']);
+
+        foreach ([$mondayBlock, $tuesdayBlock] as $block) {
+            Enrollment::create([
+                'student_id' => Student::factory()->create(['block_id' => $block->id])->id,
+                'subject_id' => $subject->id,
+                'block_id' => $block->id,
+                'enrolled_by' => $faculty->id,
+            ]);
+        }
+
+        ClassSchedule::create([
+            'subject_id' => $subject->id, 'block_id' => $mondayBlock->id, 'day' => 'Monday',
+            'start_time' => '08:00', 'end_time' => '10:00', 'room' => 'PTC-301',
+        ]);
+        ClassSchedule::create([
+            'subject_id' => $subject->id, 'block_id' => $tuesdayBlock->id, 'day' => 'Tuesday',
+            'start_time' => '13:00', 'end_time' => '15:00', 'room' => 'PTC-302',
+        ]);
+
+        $this->actingAs($faculty)->getJson('/api/admin/schedule')
+            ->assertOk()
+            ->assertJsonCount(1, 'classes')
+            ->assertJsonPath('classes.0.block', 'COMSEC 01')
+            ->assertJsonPath('classes.0.schedule', '8:00 AM - 10:00 AM')
+            ->assertJsonPath('classes.0.room', 'PTC-301');
+    }
+
     public function test_professor_schedule_returns_no_classes_when_nothing_is_scheduled_today(): void
     {
         Carbon::setTestNow('2026-09-29 09:00:00');
@@ -189,6 +229,88 @@ class FacultyFrontendLoginTest extends TestCase
         $this->actingAs($faculty)->getJson('/api/admin/overview')
             ->assertOk()
             ->assertJsonStructure(['stats', 'attendanceTrendsWeekday', 'pieData', 'alerts']);
+    }
+
+    public function test_professor_overview_includes_a_live_saturday_scan_for_a_class_ending_at_midnight(): void
+    {
+        Carbon::setTestNow('2026-10-10 10:00:00');
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        $block = Block::factory()->create();
+        $student = Student::factory()->create(['block_id' => $block->id]);
+        $subject = Subject::factory()->create([
+            'faculty_id' => $faculty->id,
+            'day' => 'Saturday',
+            'start_time' => '07:31:00',
+            'end_time' => '24:00:00',
+        ]);
+        DB::table('enrollments')->insert([
+            'student_id' => $student->id,
+            'subject_id' => $subject->id,
+            'block_id' => $block->id,
+            'enrolled_by' => $faculty->id,
+            'created_at' => now()->subWeek(),
+            'updated_at' => now()->subWeek(),
+        ]);
+        DB::table('fingerprint_attendance_events')->insert([
+            'student_id' => $student->student_number,
+            'device_id' => 'sensor-01',
+            'fingerprint_id' => 1,
+            'subject_id' => $subject->id,
+            'scanned_at' => '2026-10-10 07:35:00',
+            'created_at' => '2026-10-10 07:35:00',
+            'updated_at' => '2026-10-10 07:35:00',
+        ]);
+
+        $this->actingAs($faculty)->getJson('/api/admin/overview')
+            ->assertOk()
+            ->assertJsonCount(7, 'attendanceTrendsWeekday')
+            ->assertJsonPath('attendanceTrendsWeekday.5.name', 'Sat')
+            ->assertJsonPath('attendanceTrendsWeekday.5.present', 1)
+            ->assertJsonPath('stats.totalStudents', 1)
+            ->assertJsonPath('stats.presentToday', 1);
+    }
+
+    public function test_professor_reports_return_a_sequential_array_after_pending_rows_are_removed(): void
+    {
+        Carbon::setTestNow('2026-10-12 10:00:00');
+        $faculty = User::factory()->create(['role' => 'faculty']);
+        $block = Block::factory()->create(['name' => 'COMSEC 01']);
+        $subject = Subject::factory()->create([
+            'faculty_id' => $faculty->id,
+            'day' => 'Monday',
+            'start_time' => '08:00:00',
+            'end_time' => '12:00:00',
+        ]);
+        $pendingStudent = Student::factory()->create(['block_id' => $block->id]);
+        $presentStudent = Student::factory()->create(['block_id' => $block->id]);
+
+        foreach ([$pendingStudent, $presentStudent] as $student) {
+            DB::table('enrollments')->insert([
+                'student_id' => $student->id,
+                'subject_id' => $subject->id,
+                'block_id' => $block->id,
+                'enrolled_by' => $faculty->id,
+                'created_at' => now()->subWeek(),
+                'updated_at' => now()->subWeek(),
+            ]);
+        }
+        DB::table('fingerprint_attendance_events')->insert([
+            'student_id' => $presentStudent->student_number,
+            'device_id' => 'sensor-01',
+            'fingerprint_id' => 2,
+            'subject_id' => $subject->id,
+            'scanned_at' => '2026-10-12 08:05:00',
+            'created_at' => '2026-10-12 08:05:00',
+            'updated_at' => '2026-10-12 08:05:00',
+        ]);
+
+        $this->actingAs($faculty)
+            ->getJson('/api/admin/reports?from=2026-10-12&to=2026-10-18')
+            ->assertOk()
+            ->assertJsonCount(1, 'reports')
+            ->assertJsonPath('reports.0.student.idNumber', $presentStudent->student_number)
+            ->assertJsonPath('scheduledDates.0', '2026-10-12')
+            ->assertJsonCount(1, 'scheduledDates');
     }
 
     public function test_professor_can_submit_and_read_archive_requests(): void

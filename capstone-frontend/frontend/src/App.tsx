@@ -17,7 +17,6 @@ import {
   Schedule,
   MasterSchedule,
   Settings,
-  ScheduleChangeRequests,
   UserManagement,
 } from './components/dashboard';
 import type { UserRole } from './types/rbac';
@@ -31,6 +30,8 @@ import {
   MessageSquareWarning,
   CalendarDays,
   TableProperties,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react';
 
 import { apiFetch, clearApiToken, hasApiToken } from './api';
@@ -45,6 +46,24 @@ type ViewRoute = {
   id: string;
   path: string;
   element: any;
+};
+
+type IdleSettings = {
+  timeoutMinutes: number;
+  warningDelaySeconds: number;
+  countdownSeconds: number;
+};
+
+const idleSettingsFromMinutes = (minutes: number): IdleSettings => {
+  const timeoutMinutes = Math.min(1440, Math.max(5, minutes));
+  const totalSeconds = timeoutMinutes * 60;
+  const countdownSeconds = Math.min(120, totalSeconds - 60);
+
+  return {
+    timeoutMinutes,
+    warningDelaySeconds: totalSeconds - countdownSeconds,
+    countdownSeconds,
+  };
 };
 
 type StaffRole = Extract<UserRole, 'admin' | 'super_admin'>;
@@ -93,23 +112,20 @@ export default function App() {
   const [currentView, setCurrentView] = useState('overview');
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const superAdminIdleTimerRef = useRef(null as any);
-  const lastActivityRef = useRef(0);
+  const idleWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleCountdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const idleWarningOpenRef = useRef(false);
+  const [showIdleWarning, setShowIdleWarning] = useState(false);
+  const [idleSettings, setIdleSettings] = useState<IdleSettings>(() => idleSettingsFromMinutes(30));
+  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(120);
   const navigate = useNavigate();
   const location = useLocation();
   const isRegistrationRoute = location.pathname === '/register/student' || location.pathname.startsWith('/register/student/');
 
   useEffect(() => {
-    const fetchMaintenance = async () => {
-      try {
-        const res = await apiFetch('/api/health/status');
-        if (res.ok) {
-          const data = await res.json();
-          setIsMaintenanceMode(!!data.maintenanceMode);
-        }
-      } catch { /* ignore */ }
-    };
-    fetchMaintenance();
+    const showLockdown = () => setIsMaintenanceMode(true);
+    window.addEventListener('system-lockdown', showLockdown);
+    return () => window.removeEventListener('system-lockdown', showLockdown);
   }, []);
 
   // Check for existing session on app load (skip on public pages to avoid 401 noise)
@@ -118,8 +134,7 @@ export default function App() {
       isRegistrationRoute ||
       location.pathname === '/login/admin' ||
       location.pathname === '/login/super-admin' ||
-      location.pathname.startsWith('/login/') ||
-      location.pathname === '/forgot-password';
+      location.pathname.startsWith('/login/');
 
     if (isPublicRoute) {
       setIsLoadingAuth(false);
@@ -188,40 +203,79 @@ export default function App() {
   }, [navigate]);
 
   useEffect(() => {
-    const SUPER_ADMIN_IDLE_MS = 10 * 60 * 1000;
-    if (!isAuthenticated || role !== 'super_admin') {
-      if (superAdminIdleTimerRef.current) {
-        clearTimeout(superAdminIdleTimerRef.current);
-      }
-      return;
-    }
+    if (!isAuthenticated || mustChangePassword) return;
+    const controller = new AbortController();
 
-    const resetTimer = () => {
-      lastActivityRef.current = Date.now();
-      if (superAdminIdleTimerRef.current) {
-        clearTimeout(superAdminIdleTimerRef.current);
+    apiFetch('/api/session-settings', { signal: controller.signal })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.message || 'Unable to load inactivity settings.');
+        if (body.settings) setIdleSettings(body.settings);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') console.error('Idle settings error:', error);
+      });
+
+    const updateIdleSettings = (event: Event) => {
+      const settings = (event as CustomEvent<{ sessionTimeoutMinutes?: number }>).detail;
+      if (Number.isFinite(settings?.sessionTimeoutMinutes)) {
+        setIdleSettings(idleSettingsFromMinutes(Number(settings.sessionTimeoutMinutes)));
       }
-      superAdminIdleTimerRef.current = setTimeout(() => {
-        const idleForMs = Date.now() - lastActivityRef.current;
-        if (idleForMs >= SUPER_ADMIN_IDLE_MS) {
-          handleLogout();
-        } else {
-          resetTimer();
-        }
-      }, SUPER_ADMIN_IDLE_MS);
     };
-
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'];
-    events.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
-    resetTimer();
+    window.addEventListener('school-settings-updated', updateIdleSettings);
 
     return () => {
-      events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
-      if (superAdminIdleTimerRef.current) {
-        clearTimeout(superAdminIdleTimerRef.current);
-      }
+      controller.abort();
+      window.removeEventListener('school-settings-updated', updateIdleSettings);
     };
-  }, [isAuthenticated, role, handleLogout]);
+  }, [isAuthenticated, mustChangePassword]);
+
+  const continueIdleSession = useCallback(() => {
+    idleWarningOpenRef.current = false;
+    setShowIdleWarning(false);
+    setIdleSecondsRemaining(idleSettings.countdownSeconds);
+    if (idleCountdownTimerRef.current) clearInterval(idleCountdownTimerRef.current);
+    window.dispatchEvent(new Event('portal-session-continued'));
+  }, [idleSettings.countdownSeconds]);
+
+  useEffect(() => {
+    if (!isAuthenticated || mustChangePassword) return;
+    const warningDelayMs = idleSettings.warningDelaySeconds * 1000;
+    const scheduleWarning = () => {
+      if (idleWarningTimerRef.current) clearTimeout(idleWarningTimerRef.current);
+      idleWarningTimerRef.current = setTimeout(() => {
+        idleWarningOpenRef.current = true;
+        setShowIdleWarning(true);
+        setIdleSecondsRemaining(idleSettings.countdownSeconds);
+        if (idleCountdownTimerRef.current) clearInterval(idleCountdownTimerRef.current);
+        idleCountdownTimerRef.current = setInterval(() => {
+          setIdleSecondsRemaining(previous => {
+            if (previous <= 1) {
+              if (idleCountdownTimerRef.current) clearInterval(idleCountdownTimerRef.current);
+              handleLogout();
+              return 0;
+            }
+            return previous - 1;
+          });
+        }, 1000);
+      }, warningDelayMs);
+    };
+    const recordActivity = () => {
+      if (!idleWarningOpenRef.current) scheduleWarning();
+    };
+    const continueListener = () => scheduleWarning();
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll', 'input'];
+    events.forEach(eventName => window.addEventListener(eventName, recordActivity, { passive: true }));
+    window.addEventListener('portal-session-continued', continueListener);
+    scheduleWarning();
+
+    return () => {
+      events.forEach(eventName => window.removeEventListener(eventName, recordActivity));
+      window.removeEventListener('portal-session-continued', continueListener);
+      if (idleWarningTimerRef.current) clearTimeout(idleWarningTimerRef.current);
+      if (idleCountdownTimerRef.current) clearInterval(idleCountdownTimerRef.current);
+    };
+  }, [isAuthenticated, mustChangePassword, handleLogout, idleSettings]);
 
   const navItemsByRole: Record<StaffRole, NavItem[]> = useMemo(
     () => ({
@@ -235,7 +289,6 @@ export default function App() {
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
         { id: 'master-schedule', label: 'Master Schedule', icon: TableProperties },
         { id: 'users', label: 'User Management', icon: Users },
-        { id: 'schedule-requests', label: 'Schedule Requests', icon: ClipboardList },
         { id: 'archive-requests', label: 'Archive Requests', icon: ClipboardList },
         { id: 'settings', label: 'System Configuration', icon: SettingsIcon },
         { id: 'logs', label: 'Audit Logs', icon: Shield },
@@ -261,7 +314,6 @@ export default function App() {
         { id: 'overview', path: '/super-admin/overview', element: <Overview role="super_admin" /> },
         { id: 'master-schedule', path: '/super-admin/master-schedule', element: <MasterSchedule /> },
         { id: 'users', path: '/super-admin/users', element: <UserManagement /> },
-        { id: 'schedule-requests', path: '/super-admin/schedule-requests', element: <ScheduleChangeRequests /> },
         {
           id: 'archive-requests',
           path: '/super-admin/archive-requests',
@@ -270,19 +322,13 @@ export default function App() {
         {
           id: 'settings',
           path: '/super-admin/settings',
-          element: (
-            <Settings
-              canManageMaintenance
-              isMaintenanceMode={isMaintenanceMode}
-              onToggleMaintenance={setIsMaintenanceMode}
-            />
-          ),
+          element: <Settings />,
         },
         { id: 'logs', path: '/super-admin/logs', element: <AuditLogs /> },
         { id: 'app-reports', path: '/super-admin/app-reports', element: <AppReports mode="review" /> },
       ],
     }),
-    [isMaintenanceMode, role]
+    [role]
   );
 
   const allowedViews = useMemo(
@@ -371,23 +417,30 @@ export default function App() {
 
     if (isMaintenanceMode && role !== 'super_admin') {
       return (
-        <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-6">
-          <div className="max-w-lg text-center bg-white border border-neutral-200 rounded-2xl p-8 shadow-sm">
-            <h1 className="text-2xl font-semibold text-neutral-900">We’ll be right back</h1>
-            <p className="text-neutral-600 mt-3">
-              The system is currently in maintenance mode. Please check back later.
+        <main className="portal-lockdown-screen">
+          <div className="portal-lockdown-card" role="alert" aria-live="assertive">
+            <div className="portal-lockdown-icon" aria-hidden="true"><ShieldAlert /></div>
+            <span className="portal-lockdown-kicker">Emergency security mode</span>
+            <h1>System Lockdown</h1>
+            <p>
+              Access to the attendance system has been temporarily restricted by the Super Administrator due to a security concern or detected anomaly.
             </p>
+            <div className="portal-lockdown-notice">
+              Your account and attendance data remain protected. Please wait for the Super Administrator to restore access.
+            </div>
             <button
-              className="mt-6 px-5 py-2.5 rounded-lg bg-neutral-900 text-white font-medium hover:bg-neutral-800 transition-colors"
+              className="portal-lockdown-signout"
               onClick={handleLogout}
             >
-              Sign Out
+              <LogOut aria-hidden="true" />
+              Sign out securely
             </button>
           </div>
-        </div>
+        </main>
       );
     }
     return (
+      <>
       <DashboardLayout
         currentView={currentView}
         onNavigate={handleNavigate}
@@ -395,7 +448,6 @@ export default function App() {
         role={role}
         userEmail={userEmail}
         navItems={navItemsByRole[role]}
-        isMaintenanceMode={isMaintenanceMode}
         children={
           <Routes>
             {viewRoutesByRole[role].map((route) => (
@@ -418,6 +470,17 @@ export default function App() {
           </Routes>
         }
       />
+      {showIdleWarning && (
+        <div className="portal-idle-overlay" role="dialog" aria-modal="true" aria-labelledby="react-idle-title">
+          <div className="portal-idle-card">
+            <span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-neutral-950 text-2xl font-bold text-white" aria-hidden="true">!</span>
+            <h2 id="react-idle-title" className="text-2xl font-semibold text-neutral-950">Are you still there?</h2>
+            <p className="mt-3 leading-6 text-neutral-600">No activity was detected. For security, you will be signed out automatically in <strong>{Math.floor(idleSecondsRemaining / 60)}:{String(idleSecondsRemaining % 60).padStart(2, '0')}</strong>.</p>
+            <button type="button" autoFocus onClick={continueIdleSession} className="portal-idle-continue">I’m still here</button>
+          </div>
+        </div>
+      )}
+      </>
     );
   }
 

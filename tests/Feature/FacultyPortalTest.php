@@ -151,14 +151,14 @@ class FacultyPortalTest extends TestCase
         $faculty = User::factory()->create(['role' => 'faculty']);
         $this->actingAs($faculty);
         $payload = ['name' => 'Updated Faculty', 'email' => 'faculty-updated@example.test',
-            'current_password' => 'wrong', 'password' => 'new-password-123', 'password_confirmation' => 'new-password-123',
+            'current_password' => 'wrong', 'password' => 'New-password-2026!', 'password_confirmation' => 'New-password-2026!',
             'late_minutes' => 10, 'report_days' => 7, 'role' => 'admin'];
         $this->patch(route('faculty.settings.update'), $payload)->assertSessionHasErrors('current_password');
         $this->assertDatabaseCount('faculty_preferences', 0);
         $this->patch(route('faculty.settings.update'), [...$payload, 'current_password' => 'password'])->assertSessionHasNoErrors()->assertRedirect();
         $this->assertSame('faculty', $faculty->fresh()->role);
         $this->assertSame('Updated Faculty', $faculty->fresh()->name);
-        $this->assertTrue(Hash::check('new-password-123', $faculty->fresh()->password));
+        $this->assertTrue(Hash::check('New-password-2026!', $faculty->fresh()->password));
         $this->assertDatabaseHas('faculty_preferences', ['user_id' => $faculty->id, 'late_minutes' => 10, 'report_days' => 7]);
     }
 

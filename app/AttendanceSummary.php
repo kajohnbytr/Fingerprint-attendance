@@ -13,9 +13,11 @@ use Illuminate\Support\Facades\DB;
 
 class AttendanceSummary
 {
+    public function __construct(private readonly ClassScheduleManager $classSchedules) {}
+
     public function subjects(User $faculty): Builder
     {
-        abort_unless(in_array($faculty->role, ['admin', 'faculty'], true), 403);
+        abort_unless(in_array($faculty->role, ['admin', 'program_head', 'faculty'], true), 403);
 
         return Subject::query()->when($faculty->role === 'faculty', fn (Builder $query) => $query->where('faculty_id', $faculty->id));
     }
@@ -25,7 +27,7 @@ class AttendanceSummary
     {
         return Enrollment::query()
             ->whereIn('subject_id', $this->subjects($faculty)->select('id'))
-            ->with(['student', 'subject.faculty', 'block'])
+            ->with(['student', 'subject.faculty', 'subject.classSchedules', 'block'])
             ->when($filters['student_id'] ?? null, fn (Builder $query, $id) => $query->where('student_id', $id))
             ->when($filters['subject_id'] ?? null, fn (Builder $query, $id) => $query->where('subject_id', $id))
             ->when($filters['block_id'] ?? null, fn (Builder $query, $id) => $query->where('block_id', $id));
@@ -37,6 +39,11 @@ class AttendanceSummary
         $system = DB::table('system_settings')->where('id', 1)->first();
         if ($faculty->role === 'admin') {
             return ['late_minutes' => (int) ($system->late_minutes ?? 15), 'report_days' => (int) ($system->report_days ?? 30)];
+        }
+        if ($faculty->role === 'program_head') {
+            $preferences = DB::table('program_head_preferences')->where('user_id', $faculty->id)->first();
+
+            return ['late_minutes' => (int) ($system->late_minutes ?? 15), 'report_days' => (int) ($preferences->report_days ?? 7)];
         }
         $preferences = DB::table('faculty_preferences')->where('user_id', $faculty->id)->first();
 
@@ -75,13 +82,20 @@ class AttendanceSummary
             foreach ($enrollments as $enrollment) {
                 $subject = $enrollment->subject;
                 $student = $enrollment->student;
-                if (! $student || $subject->day !== $date->format('l')) {
+                $schedule = $this->classSchedules->effective($subject, $enrollment->block_id);
+                if (! $student || $schedule['day'] !== $date->format('l')) {
                     continue;
                 }
 
-                $start = CarbonImmutable::parse($date->toDateString().' '.$subject->start_time->format('H:i:s'));
-                $end = CarbonImmutable::parse($date->toDateString().' '.$subject->end_time->format('H:i:s'));
-                if ($end->lessThanOrEqualTo($start) || $start->isAfter($now)
+                $start = CarbonImmutable::parse($date->toDateString().' '.$schedule['start_time']);
+                $endTime = $schedule['end_time'];
+                $end = str_starts_with($endTime, '24:')
+                    ? CarbonImmutable::parse($date->toDateString())->addDay()->startOfDay()->addMinutes((int) substr($endTime, 3, 2))
+                    : CarbonImmutable::parse($date->toDateString().' '.$endTime);
+                if ($end->lessThanOrEqualTo($start)) {
+                    $end = $end->addDay();
+                }
+                if ($start->isAfter($now)
                     || $enrollment->created_at->isAfter($start)
                     || ($student->deleted_at && $student->deleted_at->lessThanOrEqualTo($start))) {
                     continue;

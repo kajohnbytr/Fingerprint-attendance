@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Security\PasswordPolicy;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 
 class AdminUserRequest extends FormRequest
 {
@@ -29,7 +29,7 @@ class AdminUserRequest extends FormRequest
                 Rule::exists('students', 'id')->whereNull('deleted_at'),
                 Rule::unique('users', 'student_id')->ignore($account),
             ],
-            'password' => [$account ? 'nullable' : 'required', 'confirmed', Password::min(12)],
+            'password' => [...($account ? PasswordPolicy::rules($account, false) : PasswordPolicy::baseRules()), 'confirmed'],
         ];
     }
 }

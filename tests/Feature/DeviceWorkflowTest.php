@@ -35,6 +35,24 @@ class DeviceWorkflowTest extends TestCase
         $this->assertDatabaseCount('readings', 1);
     }
 
+    public function test_device_token_remains_valid_after_extended_inactivity(): void
+    {
+        $user = User::factory()->create();
+        $newToken = $user->createToken('sensor-01', ['attendance:create']);
+        $newToken->accessToken->forceFill([
+            'last_used_at' => now()->subYear(),
+        ])->save();
+
+        $this->withToken($newToken->plainTextToken)
+            ->getJson('/api/health')
+            ->assertOk()
+            ->assertJsonPath('database', true);
+
+        $this->assertDatabaseHas('personal_access_tokens', [
+            'id' => $newToken->accessToken->getKey(),
+        ]);
+    }
+
     public function test_attendance_keeps_the_existing_readings_url_and_supports_its_own_endpoint(): void
     {
         Carbon::setTestNow('2026-09-22 10:00:00');
@@ -78,15 +96,21 @@ class DeviceWorkflowTest extends TestCase
             'student_number' => $student->student_number,
             'email' => 'student@phinmaed.com',
         ]);
-        foreach (['/api/readings', '/api/attendance'] as $path) {
-            $response = $this->postJson($path, ['device_id' => 'sensor-01', 'fingerprint_id' => 1]);
-            $this->assertSame(201, $response->status(), $response->content());
-            $response->assertJsonPath('student_id', $student->student_number)
-                ->assertJsonPath('subject.code', $subject->code)
-                ->assertJsonPath('subject.name', $subject->description)
-                ->assertJsonPath('email_sent', true);
-        }
-        $this->assertDatabaseCount('fingerprint_attendance_events', 2);
+        $firstResponse = $this->postJson('/api/readings', ['device_id' => 'sensor-01', 'fingerprint_id' => 1]);
+        $firstResponse->assertCreated()
+            ->assertJsonPath('student_id', $student->student_number)
+            ->assertJsonPath('subject.code', $subject->code)
+            ->assertJsonPath('subject.name', $subject->description)
+            ->assertJsonPath('email_sent', true)
+            ->assertJsonPath('duplicate', false);
+
+        $this->postJson('/api/attendance', ['device_id' => 'sensor-01', 'fingerprint_id' => 1])
+            ->assertOk()
+            ->assertJsonPath('code', 'attendance_already_recorded')
+            ->assertJsonPath('attendance_id', $firstResponse->json('attendance_id'))
+            ->assertJsonPath('duplicate', true);
+
+        $this->assertDatabaseCount('fingerprint_attendance_events', 1);
         $this->assertDatabaseHas('audit_logs', ['action' => 'IoT student registration']);
         $this->assertDatabaseHas('audit_logs', ['action' => 'IoT attendance recorded']);
         $this->assertDatabaseHas('fingerprint_attendance_events', [
@@ -101,7 +125,7 @@ class DeviceWorkflowTest extends TestCase
             return $mail->hasTo($student->email)
                 && str_contains($body, $subject->description)
                 && str_contains($body, $subject->code);
-        }, 2);
+        });
     }
 
     public function test_device_student_registration_requires_and_saves_a_phinmaed_email(): void
@@ -152,6 +176,44 @@ class DeviceWorkflowTest extends TestCase
             'first_name' => 'Updated',
         ]);
         $this->assertDatabaseCount('device_fingerprints', 1);
+    }
+
+    public function test_device_can_list_only_its_enrolled_fingerprint_ids(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('sensor-01', ['students:create'])->plainTextToken;
+        $student = Student::factory()->create();
+        $otherStudent = Student::factory()->create();
+
+        DB::table('device_fingerprints')->insert([
+            [
+                'student_id' => $student->student_number,
+                'device_id' => 'sensor-01',
+                'fingerprint_id' => 3,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'student_id' => $otherStudent->student_number,
+                'device_id' => 'sensor-02',
+                'fingerprint_id' => 7,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->withToken($token)
+            ->getJson('/api/students?device_id=sensor-01')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('source', 'backend')
+            ->assertJsonPath('items.0.id', 3)
+            ->assertJsonPath('items.0.student_id', $student->student_number)
+            ->assertJsonMissing(['id' => 7]);
+
+        $this->withToken($token)
+            ->getJson('/api/students?device_id=sensor-02')
+            ->assertForbidden();
     }
 
     public function test_device_registration_replaces_a_stale_mapping_for_a_reused_sensor_slot(): void

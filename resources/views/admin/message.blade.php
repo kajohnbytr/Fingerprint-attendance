@@ -4,7 +4,7 @@
 @section('content')
 <div class="page-title"><div><h1>{{ $record->title }}</h1><p>{{ $record->subject_code ?? 'Campus-wide' }}</p></div><a href="{{ route('admin.inbox') }}">Back to announcements & complaints</a></div>
 <section class="panel faculty-message">
-    @if($kind === 'announcement')<small>Published by {{ $record->author_name }} · {{ \Carbon\Carbon::parse($record->published_at)->format('M j, Y g:i A') }}</small>
+    @if($kind === 'announcement')<small>Published by {{ $record->author_name }} · Last updated {{ \Carbon\Carbon::parse($record->updated_at ?? $record->published_at)->format('M j, Y g:i A') }}</small>
     @else<small>{{ $record->first_name }} {{ $record->last_name }} · {{ $record->student_number }} · Received {{ \Carbon\Carbon::parse($record->created_at)->format('M j, Y g:i A') }}</small>@endif
     <p>{{ $record->body }}</p>
     @if($kind === 'complaint')

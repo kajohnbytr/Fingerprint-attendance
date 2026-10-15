@@ -14,7 +14,7 @@
     >
 
     <title>
-        @yield('title', 'Northbridge Portal')
+        @yield('title', 'Program Head Portal')
     </title>
 
     @vite([
@@ -24,9 +24,10 @@
 </head>
 
 <body class="portal-page role-{{ auth()->user()->role }}">
+<div class="scroll-progress" aria-hidden="true"><span></span></div>
 <div class="shell">
 
-    <aside class="sidebar">
+    <aside class="sidebar" id="portal-sidebar">
 
         {{-- Brand --}}
         <a
@@ -41,8 +42,12 @@
 
             <span>
                 @if(in_array(auth()->user()->role, ['admin', 'program_head', 'faculty'], true))
-                    {{ auth()->user()->role === 'faculty' ? 'Faculty' : 'Program Head' }}
-                    <small>Panel</small>
+                    {{ [
+                        'admin' => 'System Admin',
+                        'program_head' => 'Program Head',
+                        'faculty' => 'Faculty',
+                    ][auth()->user()->role] }}
+                    <small>{{ strtoupper(str_replace('_', ' ', auth()->user()->role)) }} PORTAL</small>
                 @else
                     Northbridge
                     <small>{{ ['student' => 'STUDENT PORTAL'][auth()->user()->role] ?? 'PORTAL' }}</small>
@@ -150,10 +155,11 @@
                 {{-- Faculty teaching loads --}}
                 <a
                     href="{{ route(
-                        'program-head.faculty-loads.index'
+                        'program-head.faculty.index'
                     ) }}"
                     class="nav-link
                         {{ request()->routeIs(
+                            'program-head.faculty.*',
                             'program-head.faculty-loads.*'
                         ) ? 'active' : '' }}"
                 >
@@ -179,18 +185,17 @@
                 </a>
             @endif
 
-            {{-- Placeholder navigation --}}
-            <a class="nav-link" href="#">
+            <a class="nav-link {{ request()->routeIs('program-head.reports*') ? 'active' : '' }}" href="{{ route('program-head.reports') }}">
                 <span>▥</span>
                 <span>Reports</span>
             </a>
 
-            <a class="nav-link" href="#">
+            <a class="nav-link {{ request()->routeIs('program-head.announcements*') ? 'active' : '' }}" href="{{ route('program-head.announcements') }}">
                 <span>♧</span>
                 <span>Announcements</span>
             </a>
 
-            <a class="nav-link" href="#">
+            <a class="nav-link {{ request()->routeIs('program-head.settings*') ? 'active' : '' }}" href="{{ route('program-head.settings') }}">
                 <span>⚙</span>
                 <span>Settings</span>
             </a>
@@ -214,11 +219,13 @@
 
         <header class="topbar">
 
+            <button class="mobile-menu chrome-button" type="button" aria-label="Open navigation" aria-controls="portal-sidebar" aria-expanded="false">☰</button>
+
             <div class="topbar-context">
                 <strong>
                     @yield(
                         'heading',
-                        'Good morning, '.auth()->user()->name
+                        'Welcome Back, '.auth()->user()->name
                     )
                 </strong>
 
@@ -230,20 +237,46 @@
                 </small>
             </div>
 
-            @if(auth()->user()->role === 'program_head')
-                <label class="header-search">
+            @if(in_array(auth()->user()->role, ['admin', 'program_head', 'faculty'], true))
+                <form class="header-search global-search" action="{{ route('students.index') }}" method="GET" role="search" data-search-url="{{ route('portal.search') }}">
                     <span aria-hidden="true">⌕</span>
-                    <input type="search" placeholder="Search..." aria-label="Search">
-                </label>
+                    <input
+                        id="global-search"
+                        type="search"
+                        name="search"
+                        value="{{ request('search') }}"
+                        placeholder="Search students, faculty, subjects"
+                        aria-label="Search students, faculty, and subjects"
+                        aria-controls="global-search-results"
+                        aria-expanded="false"
+                        autocomplete="off"
+                        minlength="2"
+                    >
+                    <kbd>/</kbd>
+                    <div class="global-search-results" id="global-search-results" role="listbox" hidden></div>
+                </form>
             @endif
 
             <div class="profile">
 
-                @if(auth()->user()->role === 'program_head')
-                    <button class="header-icon" type="button" aria-label="Notifications">
-                        ♧
-                        <i></i>
-                    </button>
+                @if(in_array(auth()->user()->role, ['admin', 'program_head', 'faculty'], true))
+                    <div class="portal-notifications" data-notifications-url="{{ route('portal.notifications') }}">
+                        @php
+                            $inboxRoute = match (auth()->user()->role) {
+                                'admin' => route('admin.inbox'),
+                                'faculty' => route('faculty.inbox'),
+                                default => route('program-head.inbox'),
+                            };
+                        @endphp
+                        <button class="header-icon notification-toggle" type="button" aria-label="Notifications" aria-controls="notification-menu" aria-expanded="false">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                            <span class="notification-count" hidden></span>
+                        </button>
+                        <section class="notification-menu" id="notification-menu" aria-label="Recent notifications" hidden>
+                            <header><strong>Recent updates</strong><a href="{{ $inboxRoute }}">View inbox</a></header>
+                            <div class="notification-items" aria-live="polite"><p>Loading updates…</p></div>
+                        </section>
+                    </div>
                 @endif
 
                 <span class="avatar">
@@ -318,10 +351,39 @@
 
             @yield('content')
 
+            <footer class="portal-footer">
+                <small>Last site update: {{ now()->format('M j, Y') }}</small>
+            </footer>
+
         </section>
 
     </main>
 
 </div>
+<button class="back-to-top" type="button" aria-label="Back to top" title="Back to top">↑</button>
+<div class="cookie-banner" role="region" aria-label="Cookie notice" hidden>
+    <div><strong>Your privacy matters</strong><p>We use essential cookies for secure authentication and saved display preferences.</p></div>
+    <button class="button primary cookie-accept" type="button">Got it</button>
+</div>
+<dialog class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <form method="dialog">
+        <h2 id="confirm-title">Confirm action</h2>
+        <p id="confirm-message">This action cannot be undone.</p>
+        <div class="confirm-actions">
+            <button class="button confirm-cancel" value="cancel">Cancel</button>
+            <button class="button danger confirm-continue" value="confirm">Continue</button>
+        </div>
+    </form>
+</dialog>
+@php($idleTimeoutSettings = app(\App\Security\IdleTimeout::class)->browserSettings())
+<div class="idle-warning" role="dialog" aria-modal="true" aria-labelledby="idle-warning-title" data-warning-delay-seconds="{{ $idleTimeoutSettings['warningDelaySeconds'] }}" data-countdown-seconds="{{ $idleTimeoutSettings['countdownSeconds'] }}" hidden>
+    <div class="idle-warning-card">
+        <span class="idle-warning-icon" aria-hidden="true">!</span>
+        <h2 id="idle-warning-title">Are you still there?</h2>
+        <p>No activity was detected. For security, you will be signed out automatically in <strong class="idle-countdown">{{ sprintf('%d:%02d', intdiv($idleTimeoutSettings['countdownSeconds'], 60), $idleTimeoutSettings['countdownSeconds'] % 60) }}</strong>.</p>
+        <button class="button idle-stay-signed-in" type="button">I’m still here</button>
+    </div>
+</div>
+<div class="page-loader" aria-hidden="true"><span></span></div>
 </body>
 </html>

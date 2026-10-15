@@ -1,3 +1,421 @@
+import '../css/program_head/ollama-portal.css';
+
+function initializePortalChrome() {
+    const searchForm = document.querySelector('.global-search[data-search-url]');
+    const searchInput = searchForm?.querySelector('input[name="search"]');
+    const searchResults = searchForm?.querySelector('.global-search-results');
+    let searchTimer;
+    let activeSearch;
+
+    const closeSearchResults = () => {
+        if (!searchResults || !searchInput) return;
+        searchResults.hidden = true;
+        searchInput.setAttribute('aria-expanded', 'false');
+    };
+    const showSearchMessage = message => {
+        if (!searchResults || !searchInput) return;
+        const paragraph = document.createElement('p');
+        paragraph.className = 'search-feedback';
+        paragraph.textContent = message;
+        searchResults.replaceChildren(paragraph);
+        searchResults.hidden = false;
+        searchInput.setAttribute('aria-expanded', 'true');
+    };
+    const appendSearchResult = (container, result) => {
+        const link = document.createElement('a');
+        link.className = 'search-result';
+        link.href = result.url;
+        link.setAttribute('role', 'option');
+        link.setAttribute('aria-selected', 'false');
+
+        const content = document.createElement('span');
+        content.className = 'search-result-copy';
+        const title = document.createElement('strong');
+        title.textContent = result.title;
+        const detail = document.createElement('small');
+        detail.textContent = result.detail;
+        content.append(title, detail);
+
+        const type = document.createElement('span');
+        type.className = 'search-result-type';
+        type.textContent = result.type;
+        link.append(content, type);
+        container.append(link);
+    };
+
+    if (searchForm && searchInput && searchResults) {
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            activeSearch?.abort();
+            const query = searchInput.value.trim();
+            if (query.length < 2) {
+                closeSearchResults();
+                return;
+            }
+
+            showSearchMessage('Searching…');
+            searchTimer = setTimeout(async () => {
+                activeSearch = new AbortController();
+                const url = new URL(searchForm.dataset.searchUrl, location.origin);
+                url.searchParams.set('q', query);
+
+                try {
+                    const response = await fetch(url, {
+                        headers: { Accept: 'application/json' },
+                        credentials: 'same-origin',
+                        signal: activeSearch.signal,
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Search request failed (${response.status}).`);
+                    }
+                    const data = await response.json();
+                    if (!Array.isArray(data.results)) {
+                        throw new Error('The search response was invalid.');
+                    }
+                    if (searchInput.value.trim() !== query) return;
+
+                    const fragment = document.createDocumentFragment();
+                    if (data.results.length === 0) {
+                        const empty = document.createElement('p');
+                        empty.className = 'search-feedback';
+                        empty.textContent = 'No matching students, faculty, or subjects.';
+                        fragment.append(empty);
+                    } else {
+                        data.results.forEach(result => appendSearchResult(fragment, result));
+                        if (data.results.some(result => result.type === 'Student')) {
+                            const allResults = document.createElement('a');
+                            allResults.className = 'search-all-results';
+                            allResults.href = data.studentsUrl;
+                            allResults.textContent = 'View all matching students';
+                            fragment.append(allResults);
+                        }
+                    }
+                    searchResults.replaceChildren(fragment);
+                    searchResults.hidden = false;
+                    searchInput.setAttribute('aria-expanded', 'true');
+                } catch (error) {
+                    if (error instanceof DOMException && error.name === 'AbortError') return;
+                    console.error('Portal search failed:', error);
+                    showSearchMessage('Search is unavailable. Please try again.');
+                }
+            }, 220);
+        });
+
+        searchInput.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' && !searchResults.hidden) {
+                event.preventDefault();
+                searchResults.querySelector('.search-result, .search-all-results')?.focus();
+            } else if (event.key === 'Escape') {
+                closeSearchResults();
+            }
+        });
+
+        document.addEventListener('click', event => {
+            if (!searchForm.contains(event.target)) closeSearchResults();
+        });
+    }
+
+    const notificationPanel = document.querySelector('.portal-notifications');
+    const notificationButton = notificationPanel?.querySelector('.notification-toggle');
+    const notificationMenu = notificationPanel?.querySelector('.notification-menu');
+    const notificationItems = notificationPanel?.querySelector('.notification-items');
+    const notificationCount = notificationPanel?.querySelector('.notification-count');
+    let isLoadingNotifications = false;
+    let lastNotificationsLoadedAt = 0;
+
+    const setNotificationsOpen = isOpen => {
+        if (!notificationButton || !notificationMenu) return;
+        notificationMenu.hidden = !isOpen;
+        notificationButton.setAttribute('aria-expanded', String(isOpen));
+    };
+    const renderNotifications = items => {
+        if (!notificationItems) return;
+        if (items.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'notification-feedback';
+            empty.textContent = 'You’re all caught up.';
+            notificationItems.replaceChildren(empty);
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        items.forEach(item => {
+            const link = document.createElement('a');
+            link.className = 'notification-item';
+            link.href = item.url;
+            const type = document.createElement('span');
+            type.className = 'notification-type';
+            type.textContent = item.type;
+            const title = document.createElement('strong');
+            title.textContent = item.title;
+            const detail = document.createElement('small');
+            detail.textContent = item.detail;
+            const timestamp = document.createElement('time');
+            timestamp.dateTime = item.timestamp;
+            const date = new Date(item.timestamp);
+            timestamp.textContent = Number.isNaN(date.getTime())
+                ? ''
+                : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+            link.append(type, title, detail, timestamp);
+            fragment.append(link);
+        });
+        notificationItems.replaceChildren(fragment);
+    };
+    const loadNotifications = async () => {
+        if (!notificationPanel || !notificationItems || isLoadingNotifications || Date.now() - lastNotificationsLoadedAt < 60000) return;
+        isLoadingNotifications = true;
+        const loading = document.createElement('p');
+        loading.className = 'notification-feedback';
+        loading.textContent = 'Loading updates…';
+        notificationItems.replaceChildren(loading);
+
+        try {
+            const response = await fetch(notificationPanel.dataset.notificationsUrl, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                throw new Error(`Notification request failed (${response.status}).`);
+            }
+            const data = await response.json();
+            if (!Array.isArray(data.items) || typeof data.count !== 'number') {
+                throw new Error('The notification response was invalid.');
+            }
+            lastNotificationsLoadedAt = Date.now();
+            renderNotifications(data.items);
+            if (notificationCount && data.count > 0) {
+                notificationCount.textContent = data.count > 9 ? '9+' : String(data.count);
+                notificationCount.hidden = false;
+                notificationButton?.setAttribute('aria-label', `Notifications, ${data.count} recent updates`);
+            }
+        } catch (requestError) {
+            console.error('Could not load portal notifications:', requestError);
+            const feedback = document.createElement('p');
+            feedback.className = 'notification-feedback';
+            feedback.textContent = 'Updates are unavailable. Please try again.';
+            notificationItems.replaceChildren(feedback);
+        } finally {
+            isLoadingNotifications = false;
+        }
+    };
+
+    notificationButton?.addEventListener('click', () => {
+        const isOpen = notificationButton.getAttribute('aria-expanded') === 'true';
+        setNotificationsOpen(!isOpen);
+        if (!isOpen) loadNotifications();
+    });
+    document.addEventListener('click', event => {
+        if (notificationPanel && !notificationPanel.contains(event.target)) setNotificationsOpen(false);
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            closeSearchResults();
+            setNotificationsOpen(false);
+        }
+        if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+            if (searchInput) {
+                event.preventDefault();
+                searchInput.focus();
+            }
+        }
+    });
+
+    const sidebar = document.querySelector('.sidebar');
+    const menuButton = document.querySelector('.mobile-menu');
+    const closeMenu = () => {
+        sidebar?.classList.remove('open');
+        menuButton?.setAttribute('aria-expanded', 'false');
+    };
+    menuButton?.addEventListener('click', () => {
+        const opening = !sidebar?.classList.contains('open');
+        sidebar?.classList.toggle('open', opening);
+        menuButton.setAttribute('aria-expanded', String(opening));
+    });
+    sidebar?.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+
+    const progress = document.querySelector('.scroll-progress span');
+    const backToTop = document.querySelector('.back-to-top');
+    const updateScrollChrome = () => {
+        const maximum = document.documentElement.scrollHeight - innerHeight;
+        const percent = maximum > 0 ? Math.min(100, scrollY / maximum * 100) : 0;
+        if (progress) progress.style.width = `${percent}%`;
+        backToTop?.classList.toggle('visible', scrollY > 480);
+    };
+    addEventListener('scroll', updateScrollChrome, { passive: true });
+    addEventListener('resize', updateScrollChrome, { passive: true });
+    updateScrollChrome();
+    backToTop?.addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
+
+    document.querySelectorAll('input[type="password"]').forEach(input => {
+        if (input.parentElement?.querySelector('.password-toggle')) return;
+        input.parentElement?.classList.add('password-field-wrap');
+        input.classList.add('has-password-toggle');
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'field-password-toggle';
+        toggle.innerHTML = `
+            <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"></path>
+                <circle cx="12" cy="12" r="2.5"></circle>
+            </svg>
+            <svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m3 3 18 18"></path>
+                <path d="M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a17.4 17.4 0 0 1-3.1 3.7"></path>
+                <path d="M6.5 6.8C3.7 8.5 2.5 12 2.5 12s3.5 6 9.5 6c1 0 1.9-.2 2.7-.5"></path>
+            </svg>`;
+        toggle.setAttribute('aria-label', 'Show password');
+        toggle.setAttribute('aria-pressed', 'false');
+        toggle.addEventListener('click', () => {
+            const visible = input.type === 'text';
+            input.type = visible ? 'password' : 'text';
+            toggle.classList.toggle('is-visible', !visible);
+            toggle.setAttribute('aria-label', `${visible ? 'Show' : 'Hide'} password`);
+            toggle.setAttribute('aria-pressed', String(!visible));
+        });
+        input.insertAdjacentElement('afterend', toggle);
+    });
+
+    const confirmDialog = document.querySelector('.confirm-dialog');
+    const confirmMessage = confirmDialog?.querySelector('#confirm-message');
+    const approvedForms = new WeakSet();
+    document.querySelectorAll('form').forEach(form => {
+        const method = form.querySelector('input[name="_method"]')?.value?.toUpperCase();
+        if (method !== 'DELETE' && !form.dataset.confirm) return;
+        form.addEventListener('submit', event => {
+            if (approvedForms.has(form) || !confirmDialog) return;
+            event.preventDefault();
+            if (confirmMessage) confirmMessage.textContent = form.dataset.confirm || 'This action cannot be undone. Continue?';
+            confirmDialog.showModal();
+            confirmDialog.addEventListener('close', () => {
+                if (confirmDialog.returnValue !== 'confirm') return;
+                approvedForms.add(form);
+                form.requestSubmit();
+            }, { once: true });
+        });
+    });
+
+    const cookieBanner = document.querySelector('.cookie-banner');
+    if (cookieBanner && localStorage.getItem('portal-cookie-notice') !== 'accepted') cookieBanner.hidden = false;
+    cookieBanner?.querySelector('.cookie-accept')?.addEventListener('click', () => {
+        localStorage.setItem('portal-cookie-notice', 'accepted');
+        cookieBanner.hidden = true;
+    });
+
+    document.querySelectorAll('a[href]').forEach(link => {
+        try {
+            const url = new URL(link.href, location.href);
+            if (!['http:', 'https:'].includes(url.protocol) || url.origin === location.origin) return;
+            url.searchParams.set('utm_source', 'attendance_portal');
+            url.searchParams.set('utm_medium', 'referral');
+            url.searchParams.set('utm_campaign', document.body.classList.contains('portal-page') ? 'authenticated_portal' : 'site_navigation');
+            link.href = url.toString();
+            link.rel = 'noopener noreferrer';
+        } catch {
+            // Ignore malformed and non-navigation links.
+        }
+    });
+
+    const loader = document.querySelector('.page-loader');
+    document.querySelectorAll('a[href]').forEach(link => link.addEventListener('click', () => {
+        if (link.target !== '_blank' && link.origin === location.origin && !link.hash) loader?.classList.add('active');
+    }));
+    document.querySelectorAll('form').forEach(form => form.addEventListener('submit', () => {
+        loader?.classList.add('active');
+    }));
+    addEventListener('pageshow', () => loader?.classList.remove('active'));
+    document.querySelector('.history-back')?.addEventListener('click', () => history.back());
+
+    const idleWarning = document.querySelector('.idle-warning');
+    const idleCountdown = idleWarning?.querySelector('.idle-countdown');
+    const staySignedIn = idleWarning?.querySelector('.idle-stay-signed-in');
+    const logoutForm = document.querySelector('.logout-button')?.closest('form');
+    const warningDelayMs = Number(idleWarning?.dataset.warningDelaySeconds || 60) * 1000;
+    const logoutDelaySeconds = Number(idleWarning?.dataset.countdownSeconds || 120);
+    let warningTimer;
+    let countdownTimer;
+    let warningOpen = false;
+    let secondsRemaining = logoutDelaySeconds;
+
+    const formatCountdown = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    const stopCountdown = () => {
+        clearInterval(countdownTimer);
+        countdownTimer = undefined;
+    };
+    const scheduleWarning = () => {
+        clearTimeout(warningTimer);
+        warningTimer = setTimeout(() => {
+            warningOpen = true;
+            secondsRemaining = logoutDelaySeconds;
+            if (idleCountdown) idleCountdown.textContent = formatCountdown(secondsRemaining);
+            if (idleWarning) idleWarning.hidden = false;
+            staySignedIn?.focus();
+            stopCountdown();
+            countdownTimer = setInterval(() => {
+                secondsRemaining -= 1;
+                if (idleCountdown) idleCountdown.textContent = formatCountdown(Math.max(0, secondsRemaining));
+                if (secondsRemaining <= 0) {
+                    stopCountdown();
+                    logoutForm?.requestSubmit();
+                }
+            }, 1000);
+        }, warningDelayMs);
+    };
+    const recordActivity = () => {
+        if (!warningOpen) scheduleWarning();
+    };
+    const continueSession = () => {
+        warningOpen = false;
+        stopCountdown();
+        if (idleWarning) idleWarning.hidden = true;
+        scheduleWarning();
+    };
+    ['pointerdown', 'keydown', 'touchstart', 'scroll', 'input'].forEach(eventName =>
+        addEventListener(eventName, recordActivity, { passive: true }));
+    staySignedIn?.addEventListener('click', continueSession);
+    if (idleWarning && logoutForm) scheduleWarning();
+}
+
+function initializeBulkScheduleEditor() {
+    const form = document.querySelector('#bulk-schedules-form');
+    const actionBar = document.querySelector('[data-bulk-schedule-actions]');
+    const saveButton = document.querySelector('[data-save-schedules]');
+    const status = document.querySelector('[data-schedule-change-status]');
+
+    if (!form || !actionBar || !saveButton || !status) return;
+
+    const controls = [...form.elements].filter(control =>
+        control.matches('input:not([type="hidden"]), select')
+    );
+    const initialValues = new Map(controls.map(control => [control.name, control.value]));
+    const hasServerErrors = actionBar.dataset.hasErrors === 'true';
+
+    const updateState = () => {
+        const changedCount = controls.filter(control => initialValues.get(control.name) !== control.value).length;
+        const hasChanges = hasServerErrors || changedCount > 0;
+        saveButton.disabled = !hasChanges;
+        status.textContent = hasServerErrors && changedCount === 0
+            ? 'Correct the highlighted schedule fields, then save again.'
+            : changedCount > 0
+                ? `${changedCount} ${changedCount === 1 ? 'field has' : 'fields have'} unsaved changes.`
+                : 'Change one or more schedules to enable saving.';
+    };
+
+    controls.forEach(control => {
+        control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', updateState);
+    });
+
+    form.addEventListener('submit', () => {
+        saveButton.disabled = true;
+        saveButton.textContent = 'Saving schedules…';
+        status.textContent = 'Validating schedule conflicts and saving all changes.';
+    });
+
+    updateState();
+}
+
+initializePortalChrome();
+initializeBulkScheduleEditor();
+
 function initializePrototypePortal() {
     if (!document.body.dataset.page) { return; }
 const $ = (selector, root = document) => root.querySelector(selector);

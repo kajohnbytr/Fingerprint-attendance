@@ -1,0 +1,260 @@
+IOT-BASED BIOMETRIC ATTENDANCE MONITORING SYSTEM
+SYSTEM REQUIREMENTS AND SPECIFICATIONS
+
+1. SYSTEM OVERVIEW
+
+System Type:
+Client-server IoT biometric attendance monitoring system
+
+Main Components:
+- ESP8266 biometric attendance device
+- Fingerprint sensor
+- LCD status display
+- Laravel REST API and web 3
+- React Super Administrator portal
+- MySQL relational database
+- Wi-Fi or local-area network communication
+- Email and in-system notifications
+
+Supported User Roles:
+- Super Administrator
+- Program Head
+- Professor or Faculty
+- Student
+- Authorized IoT attendance device
+
+
+2. IOT HARDWARE SPECIFICATIONS
+
+Microcontroller:
+- NodeMCU ESP8266 development board
+- 32-bit Tensilica L106 processor
+- Clock speed of up to 80 or 160 MHz
+- 2.4 GHz IEEE 802.11 b/g/n Wi-Fi connectivity
+- ESP8266 GPIO logic level: 3.3 V
+
+Fingerprint Sensor:
+- UART optical fingerprint sensor
+- Compatible with the Adafruit Fingerprint Sensor Library
+- Supported baud rates: 9,600, 57,600 and 115,200 baud
+- The exact sensor model should be identified from the physical module label
+
+Display:
+- 16x2 character LCD
+- I2C interface
+- I2C address: 0x27
+
+Persistent Device Storage:
+- ESP8266 EEPROM emulation
+- Allocated EEPROM size: 4,096 bytes
+- Maximum local enrollment-log records: 100
+- Maximum locally stored student records: 21
+
+Device Interface:
+- ESP8266 captive portal and web server
+- Captive portal IP address: 192.168.4.1
+- Setup Wi-Fi name: Attendance-Setup
+- Device web-server port: 80
+- Captive-portal DNS port: 53
+
+Power Requirements:
+- Stable 5 V USB input for the NodeMCU development board
+- Sensors must use a power supply appropriate for their specific model
+- A reliable power adapter is recommended for continuous deployment
+
+
+3. IOT PIN ASSIGNMENTS
+
+Fingerprint Sensor TX:
+- D5 / GPIO14
+- Connected to the ESP8266 software-serial RX
+
+Fingerprint Sensor RX:
+- D6 / GPIO12
+- Connected to the ESP8266 software-serial TX
+
+LCD SDA:
+- D2 / GPIO4
+
+LCD SCL:
+- D1 / GPIO5
+
+Reset Control:
+- D7 / GPIO13
+
+Optional Deep-Sleep Automatic Wake:
+- Connect D0 / GPIO16 to the RST pin
+
+
+4. BACKEND SOFTWARE SPECIFICATIONS
+
+Programming Language:
+- PHP 8.3 or later
+- Development machine version inspected: PHP 8.5.0
+
+Backend Framework:
+- Laravel 13
+- Installed project version inspected: Laravel 13.33.0
+
+Authentication:
+- Laravel Sanctum 4
+- Installed project version inspected: Laravel Sanctum 4.3.3
+- Role-based access control
+- Bearer-token authentication for authorized IoT devices
+
+Database:
+- MySQL relational database
+- Default MySQL port: 3306
+- Database-backed sessions, cache and queues
+
+Backend Testing and Development Tools:
+- PHPUnit 12.5
+- Composer 2
+- Laravel Pint
+- Laravel Tinker
+
+
+5. FRONTEND SOFTWARE SPECIFICATIONS
+
+Traditional Laravel Portals:
+- Laravel Blade templates
+- HTML5
+- CSS3
+- JavaScript
+
+Super Administrator Portal:
+- React 18.3.1
+- TypeScript
+- React Router 7.13.0
+- Recharts 2.15.2
+- Radix UI components
+- Lucide React icons
+- Tailwind CSS 4
+- Vite build system
+
+Supported Browsers:
+- Current versions of Google Chrome
+- Current versions of Microsoft Edge
+- Current versions of Mozilla Firefox
+- A modern mobile browser with JavaScript enabled
+
+
+6. ESP8266 FIRMWARE SPECIFICATIONS
+
+Programming Platform:
+- Arduino C/C++
+- ESP8266 Arduino Core
+- NodeMCU ESP8266 board target
+
+Main Firmware Libraries:
+- ESP8266WiFi
+- WiFiClientSecure
+- ESP8266HTTPClient
+- ESP8266WebServer
+- DNSServer
+- Adafruit_Fingerprint
+- LiquidCrystal_I2C
+- SoftwareSerial
+- Wire
+- EEPROM
+- C/C++ time library
+
+Firmware Functions:
+- Fingerprint enrollment and identification
+- Student registration
+- Captive-portal configuration
+- Local EEPROM storage
+- Backend attendance synchronization
+- NTP time synchronization
+- LCD attendance feedback
+- Duplicate-attendance response handling
+- Configurable backend base URL
+- Device restart and maintenance controls
+
+
+7. NETWORK REQUIREMENTS
+
+- 2.4 GHz Wi-Fi network for the ESP8266
+- Local-area network or internet connection between the ESP8266 and server
+- HTTP during local development
+- HTTPS strongly recommended for production
+- JSON request and response format
+- Laravel development server port: 8000
+- React development server port: 8080
+- MySQL database port: 3306
+- Access to an NTP server for accurate attendance timestamps
+- A fixed server IP address, local hostname or public domain is recommended
+
+
+8. MINIMUM SERVER OR DEVELOPMENT COMPUTER REQUIREMENTS
+
+The following values are recommended deployment requirements rather than
+hard-coded application limitations.
+
+Minimum Requirements:
+- Dual-core 64-bit processor
+- 4 GB RAM
+- 10 GB available storage
+- Windows 10/11 or a supported Linux distribution
+- PHP 8.3 or later
+- MySQL 8-compatible database server
+- Composer 2
+- Node.js 20 LTS or later
+- Reliable network connection
+- Modern web browser
+
+Recommended Requirements:
+- Quad-core 64-bit processor
+- 8 GB RAM or more
+- Solid-state drive with at least 20 GB available storage
+- Gigabit Ethernet connection for the server
+- Dedicated or reliable 2.4 GHz Wi-Fi access point for IoT devices
+- HTTPS certificate
+- Automated database backup
+- Uninterruptible power supply for the server and attendance device
+
+
+9. CORE FUNCTIONAL REQUIREMENTS
+
+- Biometric identification of enrolled students
+- Student and fingerprint enrollment
+- One valid attendance record per student, subject and class date
+- Present, late, absent and pending attendance classifications
+- Subject, block, faculty and schedule matching
+- Live or frequently refreshed faculty attendance trends
+- Weekly faculty attendance reports
+- Program Head academic and attendance reports
+- Super Administrator system management
+- Announcement and notification distribution
+- CSV report export
+- Role-based portal access
+- Configurable inactivity timeout
+- Password and security policies
+- Audit logging
+- Emergency system lockdown
+- LCD feedback after fingerprint scanning
+- Local device data with backend synchronization
+
+
+10. NON-FUNCTIONAL AND SECURITY REQUIREMENTS
+
+- Responsive portal interfaces for desktop and mobile screens
+- Secure password hashing
+- Authenticated portal and API access
+- Authorized device tokens for IoT requests
+- Prevention of duplicate attendance submissions
+- Input validation on device and server requests
+- Session inactivity timeout
+- Emergency restriction of non-Super-Administrator accounts
+- Database backups and recovery procedures
+- HTTPS encryption for production deployments
+- Stable power and network connectivity
+- Auditability of important administrative and attendance operations
+
+
+11. SECURITY NOTE
+
+Backend credentials, API tokens, Wi-Fi passwords and application secrets must
+not be included in thesis screenshots, published source code or public
+repositories. Device tokens should be rotated before production deployment if
+they have been exposed during development.

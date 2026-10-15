@@ -1,4 +1,5 @@
 import React, { useEffect, useState, type ComponentType } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Shield, 
   LogOut, 
@@ -17,13 +18,42 @@ import {
   DropdownMenuTrigger 
 } from '../ui/dropdown-menu';
 import { roleLabels, panelLabels, type UserRole } from '../../types/rbac';
-import { API_BASE_URL } from '../../config';
+import { apiFetch } from '../../api';
 
 type NavItem = {
   id: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
 };
+
+type UserSearchResult = {
+  name: string;
+  email: string;
+  roleLabel?: string;
+  role?: string;
+};
+
+type PortalNotification = {
+  id: string;
+  label: string;
+  count: number;
+  targetView?: string;
+  title?: string;
+  body?: string;
+  detail?: string;
+  timestamp?: string;
+};
+
+function isUserSearchResult(user: unknown): user is UserSearchResult {
+  return typeof user === 'object' &&
+    user !== null &&
+    'name' in user &&
+    typeof user.name === 'string' &&
+    'email' in user &&
+    typeof user.email === 'string' &&
+    (!('roleLabel' in user) || typeof user.roleLabel === 'string') &&
+    (!('role' in user) || typeof user.role === 'string');
+}
 
 interface DashboardLayoutProps {
   children?: React.ReactNode;
@@ -33,7 +63,6 @@ interface DashboardLayoutProps {
   role: UserRole;
   userEmail: string;
   navItems: NavItem[];
-  isMaintenanceMode: boolean;
 }
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
@@ -44,18 +73,110 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   role,
   userEmail,
   navItems,
-  isMaintenanceMode,
 }: DashboardLayoutProps) => {
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [notifications, setNotifications] = useState<{ id: string; label: string; count: number; targetView?: string }[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<PortalNotification[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<PortalNotification | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [cookieAccepted, setCookieAccepted] = useState(() => localStorage.getItem('staff-cookie-notice') === 'accepted');
+  const [schoolName, setSchoolName] = useState('University Attendance Portal');
+
+  useEffect(() => {
+    if (role !== 'super_admin') return;
+    const controller = new AbortController();
+    apiFetch('/api/admin/settings', { signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(body => body?.settings?.schoolName && setSchoolName(body.settings.schoolName))
+      .catch(() => undefined);
+    const updateSchoolName = (event: Event) => {
+      const settings = (event as CustomEvent<{ schoolName?: string }>).detail;
+      if (settings?.schoolName) setSchoolName(settings.schoolName);
+    };
+    window.addEventListener('school-settings-updated', updateSchoolName);
+    return () => {
+      controller.abort();
+      window.removeEventListener('school-settings-updated', updateSchoolName);
+    };
+  }, [role]);
+
+  useEffect(() => {
+    const updateScroll = () => {
+      const maximum = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollProgress(maximum > 0 ? Math.min(100, window.scrollY / maximum * 100) : 0);
+    };
+    window.addEventListener('scroll', updateScroll, { passive: true });
+    window.addEventListener('resize', updateScroll);
+    updateScroll();
+    return () => {
+      window.removeEventListener('scroll', updateScroll);
+      window.removeEventListener('resize', updateScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAnnouncement) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedAnnouncement(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedAnnouncement]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (role !== 'super_admin' || query.length < 2) {
+      setSearchResults([]);
+      setIsSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSearchResults([]);
+    setSearchError(null);
+    setIsSearchLoading(true);
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ search: query });
+        const response = await apiFetch(`/api/admin/users?${params}`, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to search users');
+        }
+
+        const users = Array.isArray(data.users) ? data.users : [];
+        setSearchResults(users.slice(0, 6).filter(isUserSearchResult));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setSearchResults([]);
+          setSearchError(error instanceof Error ? error.message : 'Failed to search users');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearchLoading(false);
+        }
+      }
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [role, searchQuery]);
 
   useEffect(() => {
     let isMounted = true;
     const fetchNotifications = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/notifications`, { credentials: 'include' });
+        const res = await apiFetch('/api/notifications');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load notifications');
         if (isMounted) {
@@ -74,23 +195,35 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       }
     };
     fetchNotifications();
-    const id = setInterval(fetchNotifications, 60000);
+    const id = setInterval(fetchNotifications, 15000);
     return () => {
       isMounted = false;
       clearInterval(id);
     };
   }, []);
 
+  const toggleNotifications = () => {
+    const willOpen = !showNotifications;
+    setShowNotifications(willOpen);
+    if (!willOpen) return;
+
+    setUnreadCount(0);
+    apiFetch('/api/notifications/read', { method: 'POST' }).catch(() => undefined);
+  };
+
   return (
-    <div className="min-h-screen bg-neutral-50 flex">
+    <div className="admin-portal min-h-screen bg-white flex">
+      <div className="fixed inset-x-0 top-0 z-[100] h-1 bg-transparent" aria-hidden="true">
+        <div className="h-full bg-gradient-to-r from-blue-600 to-teal-500" style={{ width: `${scrollProgress}%` }} />
+      </div>
       {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-neutral-200 sticky top-0 h-screen z-30">
+      <aside className="hidden md:flex flex-col w-[232px] bg-white border-r border-neutral-200 sticky top-0 h-screen z-30">
         <div className="p-6 border-b border-neutral-100">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center">
+            <div className="w-[34px] h-[34px] bg-neutral-900 rounded-xl flex items-center justify-center">
               <Shield className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-xl text-neutral-900">{panelLabels[role]}</span>
+            <span className="min-w-0"><strong className="block truncate text-sm text-neutral-900">{role === 'super_admin' ? schoolName : panelLabels[role]}</strong>{role === 'super_admin' && <small className="block text-xs text-neutral-500">Super Admin Panel</small>}</span>
           </div>
         </div>
 
@@ -131,15 +264,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       )}
 
       {/* Mobile Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 w-64 bg-white border-r border-neutral-200 z-50 transform transition-transform duration-200 ease-in-out md:hidden ${
+      <aside className={`fixed inset-y-0 left-0 w-[232px] bg-white border-r border-neutral-200 z-50 transform transition-transform duration-200 ease-in-out md:hidden ${
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="p-6 border-b border-neutral-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center">
+            <div className="w-[34px] h-[34px] bg-neutral-900 rounded-xl flex items-center justify-center">
               <Shield className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-xl text-neutral-900">{panelLabels[role]}</span>
+            <span className="min-w-0"><strong className="block truncate text-sm text-neutral-900">{role === 'super_admin' ? schoolName : panelLabels[role]}</strong>{role === 'super_admin' && <small className="block text-xs text-neutral-500">Super Admin Panel</small>}</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)}>
             <X className="w-6 h-6 text-neutral-500" />
@@ -188,18 +321,62 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             >
               <Menu className="w-6 h-6" />
             </button>
-            <div className="hidden md:flex relative w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-              <input 
-                type="text" 
-                placeholder="Search..." 
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-neutral-200 text-sm focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900"
-              />
-            </div>
-            {isMaintenanceMode && (
-              <span className="hidden md:inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                Maintenance Mode Active
-              </span>
+            {role === 'super_admin' && (
+              <div className="hidden md:flex relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onFocus={() => setIsSearchOpen(true)}
+                  onBlur={() => setIsSearchOpen(false)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setIsSearchOpen(false);
+                    }
+                  }}
+                  aria-label="Search users"
+                  aria-expanded={isSearchOpen && searchQuery.trim().length >= 2}
+                  aria-controls="global-user-search-results"
+                  placeholder="Search users..."
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-neutral-200 text-sm focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900"
+                />
+                {isSearchOpen && searchQuery.trim().length >= 2 && (
+                  <div
+                    id="global-user-search-results"
+                    role="listbox"
+                    className="absolute left-0 top-full z-50 mt-2 max-h-80 w-80 overflow-y-auto border border-neutral-200 bg-white shadow-lg"
+                  >
+                    {isSearchLoading && (
+                      <p className="px-4 py-3 text-sm text-neutral-500" role="status">Searching users...</p>
+                    )}
+                    {searchError && (
+                      <p className="px-4 py-3 text-sm text-red-700" role="alert">{searchError}</p>
+                    )}
+                    {!isSearchLoading && !searchError && searchResults.length === 0 && (
+                      <p className="px-4 py-3 text-sm text-neutral-500">No users found.</p>
+                    )}
+                    {!searchError && searchResults.map((user) => (
+                      <button
+                        key={user.email}
+                        type="button"
+                        role="option"
+                        aria-selected="false"
+                        className="block w-full border-b border-neutral-100 px-4 py-3 text-left hover:bg-neutral-50"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setIsSearchOpen(false);
+                          navigate(`/super-admin/users?search=${encodeURIComponent(user.email)}`);
+                        }}
+                      >
+                        <span className="block text-sm font-medium text-neutral-900">{user.name}</span>
+                        <span className="block text-xs text-neutral-500">{user.email}</span>
+                        <span className="block text-xs text-neutral-500">{user.roleLabel || user.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -208,11 +385,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <button
                 type="button"
                 className="relative p-2 text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
-                onClick={() => setShowNotifications((prev) => !prev)}
+                onClick={toggleNotifications}
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-2 right-2 min-w-[0.75rem] h-3 px-0.5 rounded-full bg-red-500 text-[10px] leading-3 text-white flex items-center justify-center border-2 border-white">
+                  <span className="portal-notification-badge">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
@@ -232,7 +409,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                           type="button"
                           className="w-full text-left px-3 py-2 hover:bg-neutral-50 flex items-center justify-between gap-2"
                           onClick={() => {
-                            if (item.targetView) {
+                            if (item.body) {
+                              setSelectedAnnouncement(item);
+                            } else if (item.targetView) {
                               onNavigate(item.targetView);
                             }
                             setShowNotifications(false);
@@ -284,10 +463,43 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         </header>
 
         {/* Page Content */}
-        <div className="p-4 md:p-8 flex-1 overflow-x-hidden">
+        <div key={currentView} className="portal-content portal-view-enter p-4 md:p-8 flex-1 overflow-x-hidden">
           {children}
         </div>
       </main>
+      {selectedAnnouncement && (
+        <div className="announcement-modal-overlay" role="presentation" onMouseDown={event => {
+          if (event.target === event.currentTarget) setSelectedAnnouncement(null);
+        }}>
+          <section className="announcement-modal" role="dialog" aria-modal="true" aria-labelledby="announcement-modal-title">
+            <header>
+              <div>
+                <p className="announcement-modal-kicker">Announcement</p>
+                <h2 id="announcement-modal-title">{selectedAnnouncement.title}</h2>
+              </div>
+              <button type="button" className="announcement-modal-close" aria-label="Close announcement" onClick={() => setSelectedAnnouncement(null)}>
+                <X className="h-5 w-5" />
+              </button>
+            </header>
+            <p className="announcement-modal-detail">{selectedAnnouncement.detail}</p>
+            <div className="announcement-modal-body">{selectedAnnouncement.body}</div>
+            {selectedAnnouncement.timestamp && (
+              <time className="announcement-modal-time" dateTime={selectedAnnouncement.timestamp}>
+                Published {new Date(selectedAnnouncement.timestamp).toLocaleString()}
+              </time>
+            )}
+            <footer>
+              <button type="button" className="announcement-modal-done" onClick={() => setSelectedAnnouncement(null)}>Close</button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {!cookieAccepted && (
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:max-w-lg z-50 rounded-xl border border-neutral-200 bg-white p-4 shadow-2xl flex items-center gap-4">
+          <div><p className="text-sm font-medium text-neutral-900">Essential cookies</p><p className="text-xs text-neutral-600 mt-1">Used for secure authentication and saved display preferences.</p></div>
+          <button className="shrink-0 rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700" onClick={() => { localStorage.setItem('staff-cookie-notice', 'accepted'); setCookieAccepted(true); }}>Got it</button>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,29 @@
+name: Security checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, testing-branch]
+  schedule:
+    - cron: '17 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - run: composer audit --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm audit --audit-level=high
+      - run: npm audit --audit-level=high
+        working-directory: capstone-frontend/frontend

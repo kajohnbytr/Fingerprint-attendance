@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Security\AuditLogger;
+use App\Security\MfaChallenge;
+use App\Security\PasswordPolicy;
+use App\Security\SystemLockdown;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 
 class SessionController extends Controller
 {
-    public function login(Request $request): JsonResponse
+    public function __construct(private SystemLockdown $lockdown) {}
+
+    public function login(Request $request, MfaChallenge $mfa, AuditLogger $audit): JsonResponse
     {
         $data = $request->validate([
             'email' => ['required', 'email:rfc', 'max:255'],
@@ -25,16 +30,73 @@ class SessionController extends Controller
             ->first();
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
+            $audit->record($user, 'API login rejected', 'Failed', 'Invalid credentials from '.$request->ip().'.');
+
             return response()->json([
                 'error' => 'The supplied credentials are incorrect.',
             ], 422);
         }
 
         if (! $this->matchesExpectedRole($user->role, $data['expectedRole'] ?? null)) {
+            $audit->record($user, 'API login rejected', 'Failed', 'Role mismatch from '.$request->ip().'.');
+
             return response()->json([
                 'error' => 'This account does not have the selected role.',
             ], 403);
         }
+
+        if ($this->lockdown->enabled() && $user->role !== 'super_admin') {
+            $audit->record($user, 'API login rejected', 'Failed', 'System lockdown active.');
+
+            return response()->json([
+                'error' => 'The attendance system is currently in emergency lockdown.',
+                'lockdown' => true,
+            ], 503);
+        }
+
+        if (config('security.mfa_enabled')) {
+            $challenge = $mfa->issue($user, $data['expectedRole'] ?? null);
+
+            return response()->json([
+                'mfaRequired' => true,
+                'challengeToken' => $challenge['token'],
+                'expiresIn' => $challenge['expires_in'],
+                'message' => 'A verification code was sent to your email address.',
+            ], 202);
+        }
+
+        return $this->authenticatedResponse($request, $user, $audit);
+    }
+
+    public function verifyMfa(Request $request, MfaChallenge $mfa, AuditLogger $audit): JsonResponse
+    {
+        $data = $request->validate([
+            'challengeToken' => ['required', 'string', 'size:64'],
+            'code' => ['required', 'digits:6'],
+        ]);
+        $details = $mfa->details($data['challengeToken']);
+        $user = $mfa->verify($data['challengeToken'], $data['code']);
+
+        if (! $user || ! $this->matchesExpectedRole($user->role, $details['expected_role'] ?? null)) {
+            $audit->record($user, 'API MFA rejected', 'Failed', 'Invalid or expired challenge from '.$request->ip().'.');
+
+            return response()->json(['error' => 'The verification code is invalid or expired.'], 422);
+        }
+
+        return $this->authenticatedResponse($request, $user, $audit);
+    }
+
+    private function authenticatedResponse(Request $request, User $user, AuditLogger $audit): JsonResponse
+    {
+        if ($this->lockdown->enabled() && $user->role !== 'super_admin') {
+            return response()->json([
+                'error' => 'The attendance system is currently in emergency lockdown.  ',
+                'lockdown' => true,
+            ], 503);
+        }
+
+        $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $request->ip()])->save();
+        $audit->record($user, 'API login completed', details: 'Authenticated from '.$request->ip().'.');
 
         $token = $user->createToken('capstone-frontend');
 
@@ -69,7 +131,7 @@ class SessionController extends Controller
     {
         $data = $request->validate([
             'currentPassword' => ['required', 'string'],
-            'newPassword' => ['required', 'string', Password::min(8), 'different:currentPassword'],
+            'newPassword' => PasswordPolicy::rules($request->user()),
             'confirmPassword' => ['required', 'same:newPassword'],
         ]);
 
@@ -80,10 +142,7 @@ class SessionController extends Controller
             ], 422);
         }
 
-        $user->forceFill([
-            'password' => $data['newPassword'],
-            'must_change_password' => false,
-        ])->save();
+        PasswordPolicy::change($user, $data['newPassword']);
 
         return response()->json(['message' => 'Password changed successfully.']);
     }

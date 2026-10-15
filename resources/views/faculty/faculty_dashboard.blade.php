@@ -11,7 +11,7 @@
     <section class="panel">
         <div class="panel-heading"><div><h2>Recent announcements</h2><p>Campus updates and your assigned subjects.</p></div><a href="{{ route('faculty.inbox') }}#announcements">View all</a></div>
         @forelse($announcements as $announcement)
-            <article class="faculty-message"><strong>{{ $announcement->title }}</strong><small>{{ $announcement->subject_code ?? 'Campus-wide' }} · {{ $announcement->author_name }} · {{ \Carbon\Carbon::parse($announcement->published_at)->format('M j, Y') }}</small><p>{{ \Illuminate\Support\Str::limit($announcement->body, 220) }}</p></article>
+            <article class="faculty-message"><strong>{{ $announcement->title }}</strong><small>{{ $announcement->subject_code ?? 'Campus-wide' }} · {{ $announcement->author_name }} · Updated {{ \Carbon\Carbon::parse($announcement->updated_at ?? $announcement->published_at)->diffForHumans() }}</small><p>{{ \Illuminate\Support\Str::limit($announcement->body, 220) }}</p></article>
         @empty
             <p class="empty">No published announcements yet.</p>
         @endforelse

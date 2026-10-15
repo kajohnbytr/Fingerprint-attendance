@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Users, 
   UserCheck, 
@@ -148,20 +148,17 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
       }
     };
     fetchOverview();
+
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchOverview();
+      }
+    }, 15_000);
+
+    return () => window.clearInterval(refreshInterval);
   }, []);
 
-  const attendanceChartData = useMemo(() => {
-    const maxVal = Math.max(
-      1,
-      ...attendanceData.flatMap((d) => [d.present, d.absent, d.late])
-    );
-    return attendanceData.map((d) => ({
-      ...d,
-      presentScaled: (d.present * 2) / maxVal,
-      absentScaled: (d.absent * 2) / maxVal,
-      lateScaled: (d.late * 2) / maxVal,
-    }));
-  }, [attendanceData]);
+  const attendanceYAxisMaximum = Math.max(1, stats.totalStudents);
 
   if (isLoading) {
     return (
@@ -297,15 +294,20 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Attendance Trends</CardTitle>
-            <CardDescription>Weekly attendance overview across all departments.</CardDescription>
+            <CardDescription>Live attendance for the current week. Refreshes every 15 seconds.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attendanceChartData}>
+                <LineChart data={attendanceData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                   <XAxis dataKey="name" stroke="#737373" />
-                  <YAxis stroke="#737373" domain={[0, 2]} ticks={[0, 0.5, 1, 1.5, 2]} />
+                  <YAxis
+                    stroke="#737373"
+                    domain={[0, attendanceYAxisMaximum]}
+                    allowDecimals={false}
+                    tickCount={Math.min(attendanceYAxisMaximum + 1, 11)}
+                  />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e5e5' }}
                     formatter={(value: number, name: string, props: any) => {
@@ -316,15 +318,15 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
                     labelFormatter={(label) => label}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="presentScaled" name="Present" stroke="#10b981" strokeWidth={2} activeDot={{ r: 8 }} />
-                  <Line type="monotone" dataKey="absentScaled" name="Absent" stroke="#ef4444" strokeWidth={2} />
-                  <Line type="monotone" dataKey="lateScaled" name="Late" stroke="#f59e0b" strokeWidth={2} />
+                  <Line type="monotone" dataKey="present" name="Present" stroke="#10b981" strokeWidth={2} activeDot={{ r: 8 }} />
+                  <Line type="monotone" dataKey="absent" name="Absent" stroke="#ef4444" strokeWidth={2} />
+                  <Line type="monotone" dataKey="late" name="Late" stroke="#f59e0b" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
             {attendanceData.every((d) => d.present === 0 && d.absent === 0 && d.late === 0) && (
               <p className="text-xs text-neutral-500 mt-2">
-                No attendance in the last 2 weeks (Mon–Fri). Values will appear when students check in (IoT device or student panel).
+                No attendance for the current week. Values will appear after a successful fingerprint check-in is stored.
               </p>
             )}
           </CardContent>
@@ -362,8 +364,8 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
         </Card>
       </div>
 
-      {/* Charts Section 2 & Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Operational analytics are reserved for the Super Admin dashboard. */}
+      {isSuperAdmin && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Department Performance</CardTitle>
@@ -414,7 +416,7 @@ export function Overview({ role = 'admin' }: { role?: UserRole }) {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </div>}
     </div>
   );
 }

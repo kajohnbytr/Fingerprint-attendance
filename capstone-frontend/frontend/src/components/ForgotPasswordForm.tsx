@@ -5,17 +5,13 @@ export function ForgotPasswordForm({ onBack }: { onBack?: () => void }) {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [message, setMessage] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Mock reset simulation
-    setTimeout(() => {
-      console.log('Password reset requested for:', { email });
-      setIsLoading(false);
-      setIsSubmitted(true);
-    }, 1500);
+    setMessage('Password recovery is currently unavailable. Contact your system administrator.');
+    setIsLoading(false);
   };
 
   return (
@@ -71,6 +67,8 @@ export function ForgotPasswordForm({ onBack }: { onBack?: () => void }) {
               'Send reset link'
             )}
           </button>
+
+          {message && <p className={`text-sm ${isSubmitted ? 'text-emerald-700' : 'text-red-700'}`} role="status">{message}</p>}
 
           {/* Back to Login */}
           <button

@@ -8,6 +8,7 @@ use App\Http\Requests\PortalSettingsRequest;
 use App\Models\Block;
 use App\Models\Student;
 use App\Models\User;
+use App\Security\PasswordPolicy;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -182,10 +183,12 @@ class PortalController extends Controller
             if ($user->isDirty('email')) {
                 $user->email_verified_at = null;
             }
-            if (! empty($data['password'])) {
-                $user->password = $data['password'];
-            }
+            $password = $data['password'] ?? null;
+            unset($data['password'], $data['password_confirmation']);
             $user->save();
+            if ($password) {
+                PasswordPolicy::change($user, $password);
+            }
             DB::table('faculty_preferences')->updateOrInsert(['user_id' => $user->id], [
                 'late_minutes' => $data['late_minutes'],
                 'report_days' => $data['report_days'],
@@ -216,7 +219,7 @@ class PortalController extends Controller
         ]);
         abort_unless($this->attendance->subjects($request->user())->whereKey($data['subject_id'])->exists(), 404);
         DB::table('portal_announcements')->insert([
-            ...$data, 'author_id' => $request->user()->id,
+            ...$data, 'audience' => 'subject', 'author_id' => $request->user()->id,
             'published_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
 
@@ -268,7 +271,12 @@ class PortalController extends Controller
     {
         return DB::table('portal_announcements')->leftJoin('subjects', 'subjects.id', '=', 'portal_announcements.subject_id')
             ->join('users', 'users.id', '=', 'portal_announcements.author_id')
-            ->where(fn (QueryBuilder $query) => $query->whereNull('portal_announcements.subject_id')->orWhere('subjects.faculty_id', $faculty->id))
+            ->whereNull('portal_announcements.archived_at')
+            ->where(fn (QueryBuilder $query) => $query->whereNull('portal_announcements.expires_at')->orWhere('portal_announcements.expires_at', '>', now()))
+            ->where(function (QueryBuilder $query) use ($faculty): void {
+                $query->whereIn('portal_announcements.audience', ['all', 'faculty'])
+                    ->orWhere(fn (QueryBuilder $subject) => $subject->where('portal_announcements.audience', 'subject')->where('subjects.faculty_id', $faculty->id));
+            })
             ->where('published_at', '<=', now())
             ->select('portal_announcements.*', 'subjects.code as subject_code', 'users.name as author_name')
             ->orderByDesc('published_at')->orderByDesc('portal_announcements.id');
